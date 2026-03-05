@@ -11,9 +11,8 @@ groq
 langchain-groq
 langchain-huggingface
 ragas
-plotly
 datasets
-streamlit-audiorec
 rank-bm25
 python-dotenv
 pysqlite3-binary
+streamlit-audiorec
