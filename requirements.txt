@@ -7,3 +7,4 @@ sentence-transformers
 pdfplumber
 streamlit
 plotly
+altair
