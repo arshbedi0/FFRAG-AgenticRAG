@@ -11,6 +11,7 @@ groq
 langchain-groq
 langchain-huggingface
 ragas
+plotly
 datasets
 streamlit-audiorec
 rank-bm25
