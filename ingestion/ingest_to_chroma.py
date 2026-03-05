@@ -18,6 +18,13 @@ Collections created:
 
 import os, json, re, csv
 from pathlib import Path
+import sys
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass # This allows it to still work locally on your Windows machine
+
 
 # Universal config loader for local (.env) and Streamlit Cloud (st.secrets)
 def get_config(var, default=None, cast_type=None):

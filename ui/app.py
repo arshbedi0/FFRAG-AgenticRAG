@@ -8,7 +8,22 @@ import sys
 import subprocess
 import streamlit as st
 from pathlib import Path
-
+import sys  # Add this at the top of app.py
+# ... inside your auto-build logic ...
+if not os.path.exists("chroma_db"):
+    with st.spinner("🏗️ Building Forensic Database..."):
+        # sys.executable is the magic path to the correct Python environment
+        result = subprocess.run(
+            [sys.executable, "ingestion/ingest_to_chroma.py"], 
+            capture_output=True, 
+            text=True
+        )
+        
+        if result.returncode != 0:
+            st.error(f"❌ Ingestion Failed: {result.stderr}")
+            st.stop()
+        else:
+            st.success("✅ Database Built!")
 # ─── INITIALIZE CHROMADB ON STREAMLIT CLOUD ──────────────────────────────────
 # This runs ONCE on first load, then uses cached data on subsequent visits
 
