@@ -3,14 +3,12 @@ app.py — Financial Forensics RAG Chatbot UI (Streamlit Cloud Ready)
 Run: streamlit run ui/app.py
 """
 
-# ── stdlib only — NO heavy imports, NO st.* calls before set_page_config ──
 import os, sys, random, re, json, uuid, datetime, subprocess
 from pathlib import Path
 sys.path.append(".")
 
-import streamlit as st  # single import — must come before every st.* call
+import streamlit as st
 
-# ── MUST be the very first Streamlit call ──
 st.set_page_config(
     page_title="FFRAG — Financial Forensics",
     page_icon="🔍",
@@ -18,7 +16,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Secrets: st.secrets on cloud, .env locally ──
 def _load_secrets():
     try:
         for k in ["GROQ_API_KEY", "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
@@ -35,13 +32,10 @@ def _load_secrets():
 
 _load_secrets()
 
-# ── ChromaDB check — DB is committed directly to the repo ──
-# No download needed; Streamlit Cloud clones the full repo including chroma_db/
 def _ensure_chroma():
     sqlite = Path("chroma_db/chroma.sqlite3")
     if sqlite.exists():
         return True, None
-    # DB missing — try rebuilding from source as last resort
     try:
         r = subprocess.run(
             [sys.executable, "ingestion/ingest_to_chroma.py"],
@@ -61,21 +55,17 @@ if not _chroma_ok:
         st.code(_chroma_err)
     st.stop()
 
-# ── Pipeline (cached — loads once, stays in memory) ──
 @st.cache_resource(show_spinner=False)
 def load_pipeline():
     if not os.environ.get("GROQ_API_KEY"):
         raise RuntimeError("GROQ_API_KEY not set. Add it in Streamlit Cloud → Settings → Secrets.")
 
     from ui.features import Guardrails, GraphRenderer, ResponseFormatter
-
     from retrieval.retrieval_pipeline import ForensicsRetriever
     retriever = ForensicsRetriever()
-
     from generation.generation import ForensicsGenerator
     generator = ForensicsGenerator()
 
-    # Agent — non-fatal, falls back to direct retrieval if it fails
     agent = None
     try:
         from retrieval.langgraph_orchestrator import FFRAGAgent
@@ -83,7 +73,6 @@ def load_pipeline():
     except Exception:
         pass
 
-    # Voice — non-fatal
     voice = None
     try:
         from ui.features import VoiceInput
@@ -106,12 +95,13 @@ with st.spinner("⬡ Loading forensics pipeline..."):
         st.exception(e)
         st.stop()
 
-# ── Session state ──
-if "messages"     not in st.session_state: st.session_state.messages     = []
-if "session_id"   not in st.session_state: st.session_state.session_id   = str(uuid.uuid4())
-if "session_name" not in st.session_state: st.session_state.session_name = "New Session"
+if "messages"          not in st.session_state: st.session_state.messages          = []
+if "session_id"        not in st.session_state: st.session_state.session_id        = str(uuid.uuid4())
+if "session_name"      not in st.session_state: st.session_state.session_name      = "New Session"
+if "last_audio_hash"   not in st.session_state: st.session_state.last_audio_hash   = None
+if "voice_transcript"  not in st.session_state: st.session_state.voice_transcript  = ""
+if "voice_ready"       not in st.session_state: st.session_state.voice_ready       = False
 
-# ── Sessions helpers ──
 SESSIONS_DIR = Path("chat_sessions")
 SESSIONS_DIR.mkdir(exist_ok=True)
 
@@ -152,35 +142,209 @@ def auto_name(messages):
 # ── CSS ──
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
-html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; background-color: #0a0e1a; color: #c8d0e0; }
-.main { background-color: #0a0e1a; }
-.block-container { padding: 2rem 2rem 4rem; max-width: 1200px; }
-.ffrag-logo { font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 600; color: #4a9eff; letter-spacing: -1px; }
-.ffrag-subtitle { font-size: 13px; color: #556b8a; letter-spacing: 2px; text-transform: uppercase; }
-.user-bubble { background: #0f1e38; border: 1px solid #1e3a5f; border-radius: 12px 12px 2px 12px; padding: 14px 18px; margin: 8px 0; font-size: 14px; color: #a8c0e0; }
-.assistant-bubble { background: #080d1a; border: 1px solid #152035; border-radius: 2px 12px 12px 12px; padding: 18px 20px; margin: 8px 0; font-size: 14px; line-height: 1.7; }
-.source-badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
-.badge { font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 3px 10px; border-radius: 20px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
-.badge-txn { background: #0f2a1e; color: #3ddc84; border: 1px solid #1f5c3a; }
-.badge-graph { background: #1a1a0f; color: #f0c040; border: 1px solid #4a3c00; }
-.badge-reg { background: #1a0f1a; color: #c084f0; border: 1px solid #4a1a6a; }
-.score-block { display: inline-flex; align-items: center; gap: 10px; background: #0c1525; border: 1px solid #1e3050; border-radius: 8px; padding: 8px 16px; margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
-.score-critical { color: #ff4444; border-color: #4a0000; }
-.score-high { color: #ff8c42; border-color: #3a1a00; }
-.score-medium { color: #f0c040; border-color: #3a2a00; }
-.score-low { color: #3ddc84; border-color: #003a20; }
-.guardrail-block { background: #1a0f0f; border: 1px solid #4a1a1a; border-left: 3px solid #ff4444; border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 8px 0; font-size: 13px; color: #cc8888; }
-.warning-block { background: #0c1a10; border: 1px solid #1a4020; border-left: 3px solid #3ddc84; border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 12px; color: #5aaa70; }
-.tip-box { background: #0c1a10; border: 1px solid #1a4020; border-left: 3px solid #3ddc84; border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 12px; color: #5aaa70; margin: 8px 0; }
-.agent-box { background: #0a1020; border: 1px solid #1a3050; border-left: 3px solid #4a9eff; border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 11px; color: #4a7099; font-family: 'IBM Plex Mono', monospace; margin: 6px 0; }
-.voice-active { background: #1a0808; border: 1px solid #4a1010; border-radius: 8px; padding: 8px 12px; margin: 4px 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #cc4444; }
-.metric-card { background: #080d18; border: 1px solid #0f1e38; border-radius: 8px; padding: 12px 16px; text-align: center; }
-.metric-value { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; color: #4a9eff; }
-.metric-label { font-size: 10px; color: #445566; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px; }
-section[data-testid="stSidebar"] { background: #060b16 !important; border-right: 1px solid #0f1e38; }
-hr { border-color: #0f1e38 !important; }
-textarea[data-testid="stChatInputTextArea"] { background: #0a1020 !important; color: #c8d0e0 !important; border: 1px solid #1e3050 !important; font-family: 'IBM Plex Sans', sans-serif !important; font-size: 14px !important; }
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background-color: #040810;
+    color: #c8d0e0;
+}
+.main { background-color: #040810; }
+.block-container { padding: 2rem 2rem 6rem; max-width: 1200px; }
+
+/* ── HEADER ── */
+.ffrag-logo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 26px; font-weight: 600;
+    color: #4a9eff; letter-spacing: -1px;
+}
+.ffrag-subtitle {
+    font-size: 11px; color: #334466;
+    letter-spacing: 3px; text-transform: uppercase; margin-top: 2px;
+}
+
+/* ── CHAT BUBBLES ── */
+.user-bubble {
+    background: linear-gradient(135deg, #0d1d35 0%, #0a1628 100%);
+    border: 1px solid #1e3a5f;
+    border-radius: 14px 14px 2px 14px;
+    padding: 14px 18px; margin: 12px 0 6px;
+    font-size: 14px; color: #a8c0e0;
+}
+.assistant-bubble {
+    background: linear-gradient(135deg, #060c18 0%, #07101e 100%);
+    border: 1px solid #0f1e38;
+    border-radius: 2px 14px 14px 14px;
+    padding: 18px 22px; margin: 6px 0 12px;
+    font-size: 14px; line-height: 1.8;
+}
+
+/* ── BADGES ── */
+.source-badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 0; }
+.badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    padding: 3px 10px; border-radius: 20px; font-weight: 600;
+    letter-spacing: 1px; text-transform: uppercase;
+}
+.badge-txn   { background: #0a1f15; color: #3ddc84; border: 1px solid #1a4a30; }
+.badge-graph { background: #1a170a; color: #f0c040; border: 1px solid #3a3000; }
+.badge-reg   { background: #180d1f; color: #c084f0; border: 1px solid #3a1555; }
+
+/* ── SCORE ── */
+.score-block {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #060c18; border: 1px solid #1e3050;
+    border-radius: 8px; padding: 8px 16px; margin-top: 12px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+}
+.score-critical { color: #ff4444; border-color: #3a0000; }
+.score-high     { color: #ff8c42; border-color: #3a1500; }
+.score-medium   { color: #f0c040; border-color: #3a2800; }
+.score-low      { color: #3ddc84; border-color: #003a18; }
+
+/* ── SYSTEM BLOCKS ── */
+.guardrail-block {
+    background: #160c0c; border: 1px solid #3a1515;
+    border-left: 3px solid #ff4444;
+    border-radius: 0 8px 8px 0; padding: 12px 16px;
+    margin: 8px 0; font-size: 13px; color: #cc8888;
+}
+.warning-block {
+    background: #0a1510; border: 1px solid #163020;
+    border-left: 3px solid #3ddc84;
+    border-radius: 0 8px 8px 0; padding: 10px 14px;
+    font-size: 12px; color: #5aaa70;
+}
+.tip-box {
+    background: #0a1510; border: 1px solid #163020;
+    border-left: 3px solid #3ddc84;
+    border-radius: 0 8px 8px 0; padding: 10px 14px;
+    font-size: 12px; color: #5aaa70; margin: 8px 0;
+}
+.agent-box {
+    background: #070d1c; border: 1px solid #152840;
+    border-left: 3px solid #4a9eff;
+    border-radius: 0 8px 8px 0; padding: 10px 14px;
+    font-size: 11px; color: #3a6080;
+    font-family: 'IBM Plex Mono', monospace; margin: 4px 0 10px;
+}
+
+/* ── VOICE PANEL ── */
+.voice-panel {
+    background: linear-gradient(135deg, #0c0614 0%, #080414 100%);
+    border: 1px solid #2a1545;
+    border-radius: 16px;
+    padding: 0;
+    margin: 16px 0 8px;
+    overflow: hidden;
+    position: relative;
+}
+.voice-panel-header {
+    background: linear-gradient(90deg, #1a0a2e 0%, #0c0614 100%);
+    border-bottom: 1px solid #2a1545;
+    padding: 10px 18px;
+    display: flex; align-items: center; gap: 10px;
+}
+.voice-panel-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; font-weight: 600;
+    color: #9060cc; letter-spacing: 3px;
+    text-transform: uppercase;
+}
+.voice-panel-body { padding: 16px 18px 14px; }
+.voice-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #9060cc;
+    box-shadow: 0 0 8px #9060cc88;
+    display: inline-block;
+}
+.voice-dot-live {
+    background: #ff4060;
+    box-shadow: 0 0 10px #ff406088;
+    animation: pulse-dot 1s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+}
+.voice-transcript-box {
+    background: #0a0518;
+    border: 1px solid #2a1545;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-top: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: #c0a0f0;
+    line-height: 1.6;
+    min-height: 44px;
+    position: relative;
+}
+.voice-transcript-label {
+    font-size: 9px; color: #5a3a88;
+    letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.voice-send-hint {
+    font-size: 10px; color: #5a3a88;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 8px; text-align: center;
+    letter-spacing: 1px;
+}
+.voice-error {
+    background: #120808; border: 1px solid #3a1515;
+    border-radius: 8px; padding: 10px 14px; margin-top: 8px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #cc5555;
+}
+
+/* ── METRIC CARDS ── */
+.metric-card {
+    background: #07101e; border: 1px solid #0f1e38;
+    border-radius: 8px; padding: 12px 16px; text-align: center;
+}
+.metric-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 20px; font-weight: 600; color: #4a9eff;
+}
+.metric-label {
+    font-size: 10px; color: #334455;
+    text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;
+}
+
+/* ── SIDEBAR ── */
+section[data-testid="stSidebar"] {
+    background: #030710 !important;
+    border-right: 1px solid #0c1828;
+}
+
+/* ── INPUT ── */
+textarea[data-testid="stChatInputTextArea"] {
+    background: #070d1c !important;
+    color: #c8d0e0 !important;
+    border: 1px solid #1a2e4a !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-size: 14px !important;
+    border-radius: 12px !important;
+}
+
+hr { border-color: #0c1828 !important; }
+
+/* ── STREAMLIT OVERRIDES ── */
+.stButton > button {
+    background: #0a1428 !important;
+    border: 1px solid #1a3050 !important;
+    color: #7aacdd !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 1px !important;
+    border-radius: 6px !important;
+    transition: all 0.15s ease;
+}
+.stButton > button:hover {
+    background: #0f1e38 !important;
+    border-color: #4a9eff !important;
+    color: #4a9eff !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -188,7 +352,8 @@ textarea[data-testid="stChatInputTextArea"] { background: #0a1020 !important; co
 col_left, col_right = st.columns([3, 1])
 with col_left:
     st.markdown("""
-    <div style="display:flex;align-items:center;gap:16px;padding:24px 0 8px;border-bottom:1px solid #1e2d4a;margin-bottom:24px;">
+    <div style="display:flex;align-items:center;gap:16px;padding:20px 0 8px;
+                border-bottom:1px solid #0f1e38;margin-bottom:20px;">
       <div>
         <div class="ffrag-logo">⬡ FFRAG</div>
         <div class="ffrag-subtitle">Financial Forensics · Agentic RAG · GraphRAG</div>
@@ -203,12 +368,12 @@ with col_right:
             if st.button("📊 Metrics", key="metrics_btn"):
                 st.session_state["show_dashboard"] = not st.session_state.get("show_dashboard", False)
             st.markdown(f"""
-            <div style="background:linear-gradient(135deg,#0f1e38,#1a2f52);border:1px solid #00d9ff;
-                        padding:12px;border-radius:6px;text-align:center;margin-top:4px;">
-                <div style="color:#00d9ff;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Retrieval Metrics</div>
+            <div style="background:linear-gradient(135deg,#0d1e38,#162f52);border:1px solid #1a4070;
+                        padding:12px;border-radius:8px;text-align:center;margin-top:4px;">
+                <div style="color:#4a9eff;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Retrieval Metrics</div>
                 <div style="color:#3ddc84;font-size:14px;font-weight:bold;">{hybrid.get('mean_precision',0):.1%} Prec</div>
                 <div style="color:#f0c040;font-size:12px;">MRR: {hybrid.get('mrr',0):.3f}</div>
-                <div style="color:#555;font-size:9px;margin-top:4px;">Recall: {hybrid.get('mean_recall',0):.1%}</div>
+                <div style="color:#445566;font-size:9px;margin-top:4px;">Recall: {hybrid.get('mean_recall',0):.1%}</div>
             </div>""", unsafe_allow_html=True)
     except Exception:
         pass
@@ -251,7 +416,7 @@ with st.sidebar:
     show_agent   = st.toggle("Show agent trace",    value=True)
     voice_mode   = st.toggle("🎙 Voice input",       value=False)
     st.markdown("---")
-    st.markdown('<div style="font-size:11px;color:#334455;line-height:1.6;"><b style="color:#445566">Pipeline:</b> LangGraph Agentic RAG<br><b style="color:#445566">Retrieval:</b> BM25 + Dense + Reranker<br><b style="color:#445566">Graph DB:</b> Neo4j AuraDB<br><b style="color:#445566">Generation:</b> Llama 3.3 70B via Groq<br><b style="color:#445566">Voice:</b> Whisper Large v3 via Groq</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:11px;color:#334455;line-height:1.8;"><b style="color:#445566">Pipeline:</b> LangGraph Agentic RAG<br><b style="color:#445566">Retrieval:</b> BM25 + Dense + Reranker<br><b style="color:#445566">Graph DB:</b> Neo4j AuraDB<br><b style="color:#445566">Generation:</b> Llama 3.3 70B via Groq<br><b style="color:#445566">Voice:</b> Whisper Large v3 via Groq</div>', unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("### 💾 Sessions")
     cs, cn = st.columns(2)
@@ -393,8 +558,9 @@ def render_expander(results, show_scores):
 if not st.session_state.messages:
     st.markdown(
         '<div class="assistant-bubble">'
-        '<div style="color:#4a9eff;font-family:\'IBM Plex Mono\',monospace;font-size:12px;letter-spacing:2px;margin-bottom:10px;">FFRAG ONLINE · AGENTIC MODE</div>'
-        '<div style="font-size:14px;color:#8090a8;line-height:1.8;">'
+        '<div style="color:#4a9eff;font-family:\'IBM Plex Mono\',monospace;font-size:11px;'
+        'letter-spacing:3px;margin-bottom:12px;">FFRAG ONLINE · AGENTIC MODE</div>'
+        '<div style="font-size:14px;color:#7a90a8;line-height:1.9;">'
         'I\'m your Financial Forensics AI running a <b style="color:#4a9eff">LangGraph agentic loop</b> — '
         'I route your query, expand it, retrieve evidence, grade my own results, and self-correct if needed.<br><br>'
         'I reason across <b style="color:#3ddc84">transaction records</b>, '
@@ -442,7 +608,6 @@ def handle_query(query):
     if any(w in query.lower() for w in ["smurf", "aggregat"]):
         st.markdown('<div class="tip-box">💡 <b>Terminology note:</b> FATF formally calls smurfing <b>"placement via aggregation"</b>. Query expanded automatically.</div>', unsafe_allow_html=True)
 
-    # ── Agent or direct fallback ──
     if agent is not None:
         with st.spinner("⬡ Agent reasoning — routing → expanding → retrieving → grading..."):
             output = agent.run(query)
@@ -493,30 +658,132 @@ def handle_query(query):
     save_session(st.session_state.session_id, st.session_state.session_name, st.session_state.messages)
 
 
-# ── VOICE ──
+# ══════════════════════════════════════════════════════════════
+# ── VOICE INPUT PANEL
+# ══════════════════════════════════════════════════════════════
 if voice_mode and voice is not None:
-    st.markdown("---")
     try:
-        audio_bytes = voice.render_widget()
-        if audio_bytes and len(audio_bytes) > 1000:
-            if st.button("📤 Transcribe & Send", use_container_width=True):
-                with st.spinner("🎙 Transcribing..."):
+        from streamlit_mic_recorder import mic_recorder
+
+        st.markdown("""
+        <div class="voice-panel">
+          <div class="voice-panel-header">
+            <span class="voice-dot"></span>
+            <span class="voice-panel-title">Voice Input — Whisper Large v3</span>
+          </div>
+          <div class="voice-panel-body" id="voice-body">
+        """, unsafe_allow_html=True)
+
+        # The recorder widget sits inside the panel body
+        audio = mic_recorder(
+            start_prompt="⏺  Start recording",
+            stop_prompt="⏹  Stop recording",
+            just_once=True,
+            use_container_width=True,
+            key="mic_recorder_widget",
+        )
+
+        # ── Transcription: fires automatically when new audio arrives ──
+        if audio and audio.get("bytes") and len(audio["bytes"]) > 1000:
+            audio_hash = hash(audio["bytes"])
+
+            if audio_hash != st.session_state.last_audio_hash:
+                # New recording — transcribe immediately
+                st.session_state.last_audio_hash  = audio_hash
+                st.session_state.voice_ready      = False
+                st.session_state.voice_transcript = ""
+
+                with st.spinner("🎙 Transcribing with Whisper..."):
                     try:
-                        transcript = voice.transcribe(audio_bytes)
-                        st.markdown(f'<div class="voice-active">🎙 Transcribed: "{transcript}"</div>', unsafe_allow_html=True)
-                        handle_query(transcript)
-                        st.rerun()
+                        transcript = voice.transcribe(audio["bytes"], filename="audio.wav")
+                        st.session_state.voice_transcript = transcript.strip()
+                        st.session_state.voice_ready      = True
                     except Exception as e:
-                        st.error(f"Transcription failed: {e}")
-    except Exception as e:
-        st.error(f"Voice error: {e}")
+                        st.markdown(
+                            f'<div class="voice-error">⚠ Transcription failed: {e}</div>',
+                            unsafe_allow_html=True
+                        )
+
+            # ── Show transcript + confirm button ──
+            if st.session_state.voice_ready and st.session_state.voice_transcript:
+                transcript = st.session_state.voice_transcript
+
+                st.markdown(f"""
+                <div class="voice-transcript-box">
+                  <div class="voice-transcript-label">Transcribed</div>
+                  {transcript}
+                </div>
+                """, unsafe_allow_html=True)
+
+                col_send, col_clear = st.columns([3, 1])
+                with col_send:
+                    if st.button(
+                        "📤  Send to FFRAG",
+                        key="voice_send_btn",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        q = st.session_state.voice_transcript
+                        # Reset voice state before running query
+                        st.session_state.voice_transcript = ""
+                        st.session_state.voice_ready      = False
+                        st.session_state.last_audio_hash  = None
+                        handle_query(q)
+                        st.rerun()
+                with col_clear:
+                    if st.button("✕ Clear", key="voice_clear_btn", use_container_width=True):
+                        st.session_state.voice_transcript = ""
+                        st.session_state.voice_ready      = False
+                        st.session_state.last_audio_hash  = None
+                        st.rerun()
+
+        elif audio is None:
+            # No recording yet — idle state hint
+            st.markdown(
+                '<div class="voice-send-hint">Press ⏺ to record · Recording stops automatically</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown("</div></div>", unsafe_allow_html=True)   # close panel
+
+    except ImportError:
+        st.markdown("""
+        <div class="voice-panel">
+          <div class="voice-panel-header">
+            <span class="voice-dot"></span>
+            <span class="voice-panel-title">Voice Input</span>
+          </div>
+          <div class="voice-panel-body">
+            <div class="voice-error">
+              ⚠ <b>streamlit-mic-recorder</b> not installed.<br>
+              Add <code>streamlit-mic-recorder</code> to requirements.txt and redeploy.
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+elif voice_mode and voice is None:
+    st.markdown("""
+    <div class="voice-panel">
+      <div class="voice-panel-header">
+        <span class="voice-dot"></span>
+        <span class="voice-panel-title">Voice Input</span>
+      </div>
+      <div class="voice-panel-body">
+        <div class="voice-error">
+          ⚠ VoiceInput failed to initialise — check GROQ_API_KEY is set in Secrets.
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# ── INPUT ──
+# ── PENDING SIDEBAR QUERY ──
 if "pending_query" in st.session_state:
     handle_query(st.session_state.pop("pending_query"))
     st.rerun()
 
+# ── TEXT INPUT ──
 if prompt := st.chat_input("Ask about transactions, typologies, regulations..."):
     handle_query(prompt)
     st.rerun()
