@@ -25,9 +25,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # ══════════════════════════════════════════════════════════════
 class VoiceInput:
     """
-    Records audio via streamlit-audiorec, transcribes via Groq Whisper.
+    Records audio via streamlit-mic-recorder, transcribes via Groq Whisper.
 
-    Install: pip install streamlit-audiorec groq
+    Install: pip install streamlit-mic-recorder groq
     """
 
     SUPPORTED_FORMATS = ["wav", "mp3", "mp4", "webm", "m4a", "ogg"]
@@ -65,7 +65,7 @@ class VoiceInput:
         Returns audio bytes if recording available, else None.
         """
         try:
-            from streamlit_audiorec import st_audiorec
+            from streamlit_mic_recorder import mic_recorder
             import streamlit as st
 
             st.markdown("""
@@ -76,13 +76,22 @@ class VoiceInput:
                 </span>
             </div>""", unsafe_allow_html=True)
 
-            audio_bytes = st_audiorec()
-            return audio_bytes
+            audio = mic_recorder(
+                start_prompt="⏺ Start recording",
+                stop_prompt="⏹ Stop recording",
+                just_once=True,
+                key="voice_input",
+            )
 
-        except ImportError:
+            if audio:
+                return audio["bytes"]
+            return None
+
+        except ImportError as e:
             import streamlit as st
-            st.caption("Install streamlit-audiorec for voice input: "
-                      "`pip install streamlit-audiorec`")
+            st.caption("Install streamlit-mic-recorder for voice input: "
+                       "`pip install streamlit-mic-recorder`")
+            st.code(f"ImportError: {e}", language="text")
             return None
 
 

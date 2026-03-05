@@ -15,4 +15,4 @@ datasets
 rank-bm25
 python-dotenv
 pysqlite3-binary
-streamlit-audiorec
+streamlit-mic-recorder
