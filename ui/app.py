@@ -3,167 +3,14 @@ app.py — Financial Forensics RAG Chatbot UI (Streamlit Cloud Ready)
 Run: streamlit run ui/app.py
 """
 
-import os
-import sys
-import subprocess
-import streamlit as st
+# ── stdlib only — NO heavy imports, NO st.* calls before set_page_config ──
+import os, sys, random, re, json, uuid, datetime, subprocess
 from pathlib import Path
-import sys  # Add this at the top of app.py
-# ... inside your auto-build logic ...
-if not os.path.exists("chroma_db"):
-    with st.spinner("🏗️ Building Forensic Database..."):
-        # sys.executable is the magic path to the correct Python environment
-        result = subprocess.run(
-            [sys.executable, "ingestion/ingest_to_chroma.py"], 
-            capture_output=True, 
-            text=True
-        )
-        
-        if result.returncode != 0:
-            st.error(f"❌ Ingestion Failed: {result.stderr}")
-            st.stop()
-        else:
-            st.success("✅ Database Built!")
-# ─── INITIALIZE CHROMADB ON STREAMLIT CLOUD ──────────────────────────────────
-# This runs ONCE on first load, then uses cached data on subsequent visits
-
-@st.cache_resource(show_spinner=False)
-def initialize_chroma_db():
-    """Initialize ChromaDB: download from GitHub or build locally."""
-    chroma_dir = Path("chroma_db")
-    chroma_sqlite = chroma_dir / "chroma.sqlite3"
-    
-    # Already initialized
-    if chroma_sqlite.exists():
-        print(f"✅ ChromaDB already initialized at {chroma_dir}")
-        return True
-    
-    # Try to download from GitHub Release
-    print("📥 ChromaDB not found. Attempting to download from GitHub...")
-    try:
-        import urllib.request
-        import zipfile
-        
-        download_url = "https://github.com/arshbedi0/FFRAG-AgenticRAG/releases/download/v1.0/chroma_db.zip"
-        zip_file = "chroma_db_temp.zip"
-        
-        with st.spinner("📥 Downloading ChromaDB (~2 min, ~150 MB)..."):
-            urllib.request.urlretrieve(download_url, zip_file)
-            print(f"   ✅ Downloaded {zip_file}")
-        
-        with st.spinner("📦 Extracting ChromaDB..."):
-            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                zip_ref.extractall(".")
-            print(f"   ✅ Extracted successfully")
-        
-        # Cleanup
-        if os.path.exists(zip_file):
-            os.remove(zip_file)
-        
-        if chroma_sqlite.exists():
-            st.success("✅ ChromaDB ready! (Downloaded from GitHub)")
-            return True
-    
-    except Exception as e:
-        print(f"⚠️  GitHub download failed: {e}")
-    
-    # Fallback: Build locally
-    print("🔨 Building ChromaDB locally from source data...")
-    try:
-        with st.spinner("🔨 Building ChromaDB from source (~3 min, requires data files)..."):
-            result = subprocess.run(
-                ["python", "ingestion/ingest_to_chroma.py"],
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-            if result.returncode != 0:
-                print(f"Build error: {result.stderr}")
-                st.error(f"❌ Failed to build database: {result.stderr}")
-                return False
-        
-        if chroma_sqlite.exists():
-            st.success("✅ ChromaDB built successfully from source!")
-            return True
-    
-    except subprocess.TimeoutExpired:
-        st.error("❌ ChromaDB build timed out (took too long)")
-        return False
-    except Exception as e:
-        st.error(f"❌ Error building database: {str(e)}")
-        return False
-    
-    return False
-
-
-# Initialize on app startup
-if not Path("chroma_db/chroma.sqlite3").exists():
-    chroma_ready = initialize_chroma_db()
-    if not chroma_ready:
-        st.error("🚨 ChromaDB failed to initialize. App cannot run.")
-        st.stop()
-
-# ... rest of your app.py code ...
-# ... rest of your app.py code ...
-import sys, os, random, re
 sys.path.append(".")
 
-import streamlit as st
-import json, uuid, datetime
-from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
+import streamlit as st  # single import — must come before every st.* call
 
-SESSIONS_DIR = Path("chat_sessions")
-SESSIONS_DIR.mkdir(exist_ok=True)
-
-def save_session(session_id, name, messages):
-    """Persist a session to disk as JSON."""
-    path = SESSIONS_DIR / f"{session_id}.json"
-    data = {
-        "id":       session_id,
-        "name":     name,
-        "created":  str(datetime.datetime.now()),
-        "messages": [
-            {k: v for k, v in m.items() if k != "retrieval"}
-            for m in messages
-        ]
-    }
-    path.write_text(json.dumps(data, indent=2, default=str))
-
-def load_all_sessions():
-    """Return list of {id, name, created, preview} sorted newest first."""
-    sessions = []
-    for p in sorted(SESSIONS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
-        try:
-            d = json.loads(p.read_text())
-            # Preview = first user message
-            preview = next((m["content"][:50] for m in d.get("messages",[]) if m["role"]=="user"), "Empty session")
-            sessions.append({"id": d["id"], "name": d["name"], "created": d["created"], "preview": preview})
-        except Exception:
-            pass
-    return sessions
-
-def load_session(session_id):
-    """Load messages from a saved session."""
-    path = SESSIONS_DIR / f"{session_id}.json"
-    if path.exists():
-        return json.loads(path.read_text()).get("messages", [])
-    return []
-
-def delete_session(session_id):
-    path = SESSIONS_DIR / f"{session_id}.json"
-    if path.exists():
-        path.unlink()
-
-def auto_name(messages):
-    """Generate session name from first user query."""
-    for m in messages:
-        if m["role"] == "user":
-            q = m["content"]
-            return q[:40] + ("..." if len(q) > 40 else "")
-    return "New Session"
-
+# ── MUST be the very first Streamlit call ──
 st.set_page_config(
     page_title="FFRAG — Financial Forensics",
     page_icon="🔍",
@@ -171,6 +18,144 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Secrets: st.secrets on cloud, .env locally ──
+def _load_secrets():
+    try:
+        for k in ["GROQ_API_KEY", "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
+                  "EMBEDDING_MODEL", "LLM_MODEL", "CHROMA_DIR"]:
+            if k in st.secrets and not os.environ.get(k):
+                os.environ[k] = st.secrets[k]
+    except Exception:
+        pass
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+_load_secrets()
+
+# ── ChromaDB bootstrap (cached — runs once per deployment) ──
+@st.cache_resource(show_spinner=False)
+def _ensure_chroma():
+    if Path("chroma_db/chroma.sqlite3").exists():
+        return True
+    # Try GitHub release download
+    try:
+        import urllib.request, zipfile
+        url = "https://github.com/arshbedi0/FFRAG-AgenticRAG/releases/download/v1.0/chroma_db.zip"
+        urllib.request.urlretrieve(url, "chroma_db_temp.zip")
+        with zipfile.ZipFile("chroma_db_temp.zip", "r") as z:
+            z.extractall(".")
+        os.remove("chroma_db_temp.zip")
+        if Path("chroma_db/chroma.sqlite3").exists():
+            return True
+    except Exception:
+        pass
+    # Fallback: build from source data
+    try:
+        r = subprocess.run(
+            [sys.executable, "ingestion/ingest_to_chroma.py"],
+            capture_output=True, text=True, timeout=300
+        )
+        return r.returncode == 0 and Path("chroma_db/chroma.sqlite3").exists()
+    except Exception:
+        return False
+
+with st.spinner("🗄️ Initialising database..."):
+    if not _ensure_chroma():
+        st.error("🚨 ChromaDB failed to initialise. Check that data files are present in the repo.")
+        st.stop()
+
+# ── Pipeline (cached — loads once, stays in memory) ──
+@st.cache_resource(show_spinner=False)
+def load_pipeline():
+    if not os.environ.get("GROQ_API_KEY"):
+        raise RuntimeError("GROQ_API_KEY not set. Add it in Streamlit Cloud → Settings → Secrets.")
+
+    from ui.features import Guardrails, GraphRenderer, ResponseFormatter
+
+    from retrieval.retrieval_pipeline import ForensicsRetriever
+    retriever = ForensicsRetriever()
+
+    from generation.generation import ForensicsGenerator
+    generator = ForensicsGenerator()
+
+    # Agent — non-fatal, falls back to direct retrieval if it fails
+    agent = None
+    try:
+        from retrieval.langgraph_orchestrator import FFRAGAgent
+        agent = FFRAGAgent()
+    except Exception:
+        pass
+
+    # Voice — non-fatal
+    voice = None
+    try:
+        from ui.features import VoiceInput
+        voice = VoiceInput()
+    except Exception:
+        pass
+
+    return retriever, generator, agent, voice, Guardrails, GraphRenderer, ResponseFormatter
+
+with st.spinner("⬡ Loading forensics pipeline..."):
+    try:
+        retriever, generator, agent, voice, Guardrails, GraphRenderer, ResponseFormatter = load_pipeline()
+    except RuntimeError as e:
+        st.error(str(e))
+        st.info("Add your secrets in **Streamlit Cloud → App settings → Secrets** (TOML format):")
+        st.code('GROQ_API_KEY = "gsk_..."\nNEO4J_URI = "neo4j+s://xxxx.databases.neo4j.io"\nNEO4J_USER = "neo4j"\nNEO4J_PASSWORD = "your-password"', language="toml")
+        st.stop()
+    except Exception as e:
+        st.error(f"Startup error: {e}")
+        st.exception(e)
+        st.stop()
+
+# ── Session state ──
+if "messages"     not in st.session_state: st.session_state.messages     = []
+if "session_id"   not in st.session_state: st.session_state.session_id   = str(uuid.uuid4())
+if "session_name" not in st.session_state: st.session_state.session_name = "New Session"
+
+# ── Sessions helpers ──
+SESSIONS_DIR = Path("chat_sessions")
+SESSIONS_DIR.mkdir(exist_ok=True)
+
+def save_session(session_id, name, messages):
+    path = SESSIONS_DIR / f"{session_id}.json"
+    path.write_text(json.dumps({
+        "id": session_id, "name": name,
+        "created": str(datetime.datetime.now()),
+        "messages": [{k: v for k, v in m.items() if k != "retrieval"} for m in messages],
+    }, indent=2, default=str))
+
+def load_all_sessions():
+    out = []
+    for p in sorted(SESSIONS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            d = json.loads(p.read_text())
+            preview = next((m["content"][:50] for m in d.get("messages", []) if m["role"] == "user"), "Empty")
+            out.append({"id": d["id"], "name": d["name"], "created": d["created"], "preview": preview})
+        except Exception:
+            pass
+    return out
+
+def load_session(session_id):
+    p = SESSIONS_DIR / f"{session_id}.json"
+    return json.loads(p.read_text()).get("messages", []) if p.exists() else []
+
+def delete_session(session_id):
+    p = SESSIONS_DIR / f"{session_id}.json"
+    if p.exists(): p.unlink()
+
+def auto_name(messages):
+    for m in messages:
+        if m["role"] == "user":
+            q = m["content"]
+            return q[:40] + ("..." if len(q) > 40 else "")
+    return "New Session"
+
+# ── CSS ──
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
@@ -205,40 +190,9 @@ textarea[data-testid="stChatInputTextArea"] { background: #0a1020 !important; co
 </style>
 """, unsafe_allow_html=True)
 
-
-# ── LOAD PIPELINE ──
-@st.cache_resource(show_spinner=False)
-def load_pipeline():
-    from retrieval.retrieval_pipeline import ForensicsRetriever
-    from generation.generation import ForensicsGenerator
-    from retrieval.langgraph_orchestrator import FFRAGAgent
-    from ui.features import VoiceInput, Guardrails, GraphRenderer, ResponseFormatter
-    return (
-        ForensicsRetriever(),
-        ForensicsGenerator(),
-        FFRAGAgent(),
-        VoiceInput(),
-        Guardrails,
-        GraphRenderer,
-        ResponseFormatter,
-    )
-
-with st.spinner("Loading forensics pipeline..."):
-    try:
-        retriever, generator, agent, voice, Guardrails, GraphRenderer, ResponseFormatter = load_pipeline()
-    except Exception as e:
-        st.error(f"Pipeline failed to load: {e}")
-        st.stop()
-
-if "messages"    not in st.session_state: st.session_state.messages    = []
-if "session_id"  not in st.session_state: st.session_state.session_id  = str(uuid.uuid4())
-if "session_name"not in st.session_state: st.session_state.session_name= "New Session"
-if "load_sid"    not in st.session_state: st.session_state.load_sid    = None
-
-# ── HEADER WITH METRICS (TOP RIGHT) ──
-col_header_left, col_header_right = st.columns([3, 1])
-
-with col_header_left:
+# ── HEADER ──
+col_left, col_right = st.columns([3, 1])
+with col_left:
     st.markdown("""
     <div style="display:flex;align-items:center;gap:16px;padding:24px 0 8px;border-bottom:1px solid #1e2d4a;margin-bottom:24px;">
       <div>
@@ -247,54 +201,34 @@ with col_header_left:
       </div>
     </div>""", unsafe_allow_html=True)
 
-with col_header_right:
-    # Load and display metrics in top right
+with col_right:
     try:
-        import json
-        from pathlib import Path
         metrics_file = Path("evaluation/retrieval_metrics.json")
         if metrics_file.exists():
-            metrics = json.loads(metrics_file.read_text())
-            hybrid = metrics.get("hybrid", {})
-            
-            # Create a column for the metrics card
-            if st.button("📊 Metrics", key="metrics_header_btn", help="Click to view full dashboard", use_container_width=False):
-                st.session_state["show_full_dashboard"] = not st.session_state.get("show_full_dashboard", False)
-            
+            hybrid = json.loads(metrics_file.read_text()).get("hybrid", {})
+            if st.button("📊 Metrics", key="metrics_btn"):
+                st.session_state["show_dashboard"] = not st.session_state.get("show_dashboard", False)
             st.markdown(f"""
-            <div style="
-                background: linear-gradient(135deg, #0f1e38 0%, #1a2f52 100%);
-                border: 1px solid #00d9ff;
-                padding: 12px;
-                border-radius: 6px;
-                text-align: center;
-                margin-top: 4px;
-            ">
+            <div style="background:linear-gradient(135deg,#0f1e38,#1a2f52);border:1px solid #00d9ff;
+                        padding:12px;border-radius:6px;text-align:center;margin-top:4px;">
                 <div style="color:#00d9ff;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Retrieval Metrics</div>
-                <div style="color:#3ddc84;font-size:14px;font-weight:bold;margin-bottom:2px;">{hybrid.get('mean_precision', 0):.1%} Prec</div>
-                <div style="color:#f0c040;font-size:12px;margin-bottom:2px;">MRR: {hybrid.get('mrr', 0):.3f}</div>
-                <div style="color:#555;font-size:9px;margin-top:4px;">Recall: {hybrid.get('mean_recall', 0):.1%}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                <div style="color:#3ddc84;font-size:14px;font-weight:bold;">{hybrid.get('mean_precision',0):.1%} Prec</div>
+                <div style="color:#f0c040;font-size:12px;">MRR: {hybrid.get('mrr',0):.3f}</div>
+                <div style="color:#555;font-size:9px;margin-top:4px;">Recall: {hybrid.get('mean_recall',0):.1%}</div>
+            </div>""", unsafe_allow_html=True)
     except Exception:
         pass
 
-# ── FULL DASHBOARD MODAL (TOP RIGHT) ──
-if st.session_state.get("show_full_dashboard", False):
-    st.markdown("""
-    <hr style="border: 1px solid #1e3050; margin: 24px 0;">
-    """, unsafe_allow_html=True)
-    
-    dashboard_col = st.container()
-    with dashboard_col:
-        if st.button("✕ Close Dashboard", key="close_dashboard_btn", use_container_width=False):
-            st.session_state["show_full_dashboard"] = False
-            st.rerun()
-        try:
-            from ui.metrics_dashboard import render_dashboard_content
-            render_dashboard_content()
-        except Exception as e:
-            st.error(f"❌ Failed to load dashboard: {str(e)}")
+if st.session_state.get("show_dashboard"):
+    st.markdown("---")
+    if st.button("✕ Close", key="close_dash"):
+        st.session_state["show_dashboard"] = False
+        st.rerun()
+    try:
+        from ui.metrics_dashboard import render_dashboard_content
+        render_dashboard_content()
+    except Exception as e:
+        st.error(f"Dashboard unavailable: {e}")
 
 # ── SIDEBAR ──
 with st.sidebar:
@@ -308,71 +242,63 @@ with st.sidebar:
     c4.markdown('<div class="metric-card"><div class="metric-value">2,210</div><div class="metric-label">Total Docs</div></div>', unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("### 🔍 Try These Queries")
-    for s in ["Which accounts sent money to UAE?","Show structuring transactions below £10,000",
-              "SAR filing timeline for continuing activity","Find dormant accounts suddenly reactivated",
-              "What does FATF say about placement and aggregation?","Explain layering patterns","High risk corridors to Turkey or Morocco"]:
+    for s in ["Which accounts sent money to UAE?", "Show structuring transactions below £10,000",
+              "SAR filing timeline for continuing activity", "Find dormant accounts suddenly reactivated",
+              "What does FATF say about placement and aggregation?", "Explain layering patterns",
+              "High risk corridors to Turkey or Morocco"]:
         if st.button(s, key=f"sug_{s}", use_container_width=True):
             st.session_state["pending_query"] = s
     st.markdown("---")
     st.markdown("### ⚙️ Settings")
     top_k        = st.slider("Results per query", 3, 10, 5)
-    show_scores  = st.toggle("Show rerank scores", value=False)
-    show_sources = st.toggle("Show source chunks", value=True)
+    show_scores  = st.toggle("Show rerank scores",  value=False)
+    show_sources = st.toggle("Show source chunks",  value=True)
     show_graphs  = st.toggle("Render graph images", value=True)
-    show_agent   = st.toggle("Show agent trace", value=True)
-    voice_mode   = st.toggle("🎙 Voice input", value=False)
-    
+    show_agent   = st.toggle("Show agent trace",    value=True)
+    voice_mode   = st.toggle("🎙 Voice input",       value=False)
     st.markdown("---")
     st.markdown('<div style="font-size:11px;color:#334455;line-height:1.6;"><b style="color:#445566">Pipeline:</b> LangGraph Agentic RAG<br><b style="color:#445566">Retrieval:</b> BM25 + Dense + Reranker<br><b style="color:#445566">Graph DB:</b> Neo4j AuraDB<br><b style="color:#445566">Generation:</b> Llama 3.3 70B via Groq<br><b style="color:#445566">Voice:</b> Whisper Large v3 via Groq</div>', unsafe_allow_html=True)
-
     st.markdown("---")
     st.markdown("### 💾 Sessions")
-
-    # Save current session button
-    col_s, col_n = st.columns([1,1])
-    with col_s:
+    cs, cn = st.columns(2)
+    with cs:
         if st.button("💾 Save", use_container_width=True):
             if st.session_state.messages:
                 st.session_state.session_name = auto_name(st.session_state.messages)
                 save_session(st.session_state.session_id, st.session_state.session_name, st.session_state.messages)
                 st.success("Saved!")
-    with col_n:
+    with cn:
         if st.button("➕ New", use_container_width=True):
             if st.session_state.messages:
                 save_session(st.session_state.session_id, auto_name(st.session_state.messages), st.session_state.messages)
-            st.session_state.messages    = []
-            st.session_state.session_id  = str(uuid.uuid4())
-            st.session_state.session_name= "New Session"
+            st.session_state.messages     = []
+            st.session_state.session_id   = str(uuid.uuid4())
+            st.session_state.session_name = "New Session"
             st.rerun()
-
-    # Previous sessions list
-    prev_sessions = load_all_sessions()
-    if prev_sessions:
+    prev = load_all_sessions()
+    if prev:
         st.markdown('<div style="font-size:10px;color:#334455;letter-spacing:1px;text-transform:uppercase;margin:8px 0 4px;">Previous Sessions</div>', unsafe_allow_html=True)
-        for s in prev_sessions[:10]:
-            is_current = s["id"] == st.session_state.session_id
-            label = f"{'▶ ' if is_current else ''}{s['name']}"
-            col_l, col_d = st.columns([5,1])
-            with col_l:
-                if st.button(label, key=f"load_{s['id']}", use_container_width=True, disabled=is_current):
+        for s in prev[:10]:
+            is_cur = s["id"] == st.session_state.session_id
+            cl, cd = st.columns([5, 1])
+            with cl:
+                if st.button(f"{'▶ ' if is_cur else ''}{s['name']}", key=f"load_{s['id']}", use_container_width=True, disabled=is_cur):
                     if st.session_state.messages:
                         save_session(st.session_state.session_id, auto_name(st.session_state.messages), st.session_state.messages)
-                    loaded = load_session(s["id"])
-                    st.session_state.messages     = loaded
+                    st.session_state.messages     = load_session(s["id"])
                     st.session_state.session_id   = s["id"]
                     st.session_state.session_name = s["name"]
                     st.rerun()
-            with col_d:
+            with cd:
                 if st.button("🗑", key=f"del_{s['id']}", use_container_width=True):
                     delete_session(s["id"])
                     if s["id"] == st.session_state.session_id:
-                        st.session_state.messages    = []
-                        st.session_state.session_id  = str(uuid.uuid4())
-                        st.session_state.session_name= "New Session"
+                        st.session_state.messages     = []
+                        st.session_state.session_id   = str(uuid.uuid4())
+                        st.session_state.session_name = "New Session"
                     st.rerun()
     else:
         st.caption("No saved sessions yet.")
-
     if st.button("🗑 Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
@@ -380,22 +306,22 @@ with st.sidebar:
 
 # ── HELPERS ──
 def _get_doc_pages(filename):
-    return {"bulletin-2025-31a.pdf":4,"FATF Recommendations 2012.pdf":152,
-            "Guidance-PEP-Rec12-22.pdf":36,"Professional-Money-Laundering.pdf":53,
-            "sar_tti_01.pdf":33}.get(filename, 50)
+    return {"bulletin-2025-31a.pdf": 4, "FATF Recommendations 2012.pdf": 152,
+            "Guidance-PEP-Rec12-22.pdf": 36, "Professional-Money-Laundering.pdf": 53,
+            "sar_tti_01.pdf": 33}.get(filename, 50)
 
 def humanise_citations(text, results):
     maps = {}
-    for i, r in enumerate(results.get("transactions",[]), 1):
+    for i, r in enumerate(results.get("transactions", []), 1):
         m = r["metadata"]
         maps[f"[TXN-{i}]"] = f"**Account {m.get('sender_account','?')}→{m.get('receiver_account','?')} (£{float(m.get('amount',0)):,.0f}, {m.get('sender_location','?')}→{m.get('receiver_location','?')}, {m.get('typology','?')})**"
-    for i, r in enumerate(results.get("graph_captions",[]), 1):
+    for i, r in enumerate(results.get("graph_captions", []), 1):
         m = r["metadata"]
         maps[f"[GRAPH-{i}]"] = f"**{m.get('title','Graph')} — {m.get('n_accounts','?')} accounts, £{float(m.get('total_volume',0)):,.0f} total**"
-    for i, r in enumerate(results.get("regulations",[]), 1):
-        m = r["metadata"]
-        fname = m.get("filename","Regulation")
-        readable = fname.replace(".pdf","").replace("-"," ").replace("_"," ").strip()
+    for i, r in enumerate(results.get("regulations", []), 1):
+        m        = r["metadata"]
+        fname    = m.get("filename", "Regulation")
+        readable = fname.replace(".pdf", "").replace("-", " ").replace("_", " ").strip()
         name_map = {
             "bulletin 2025 31a":             "OCC/FinCEN SAR FAQ (2025)",
             "FATF Recommendations 2012":     "FATF Recommendations (2012)",
@@ -403,9 +329,9 @@ def humanise_citations(text, results):
             "Professional Money Laundering": "FATF Professional Money Laundering Report",
             "sar tti 01":                    "FinCEN SAR Activity Review",
         }
-        friendly = name_map.get(readable) or next((v for k,v in name_map.items() if k.lower() in readable.lower()), readable)
-        ci = m.get("chunk_idx",""); nc = m.get("n_chunks",1)
-        page = f"p.~{max(1,round((int(ci)/int(nc))*_get_doc_pages(fname)))}" if str(ci).isdigit() and nc else ""
+        friendly = name_map.get(readable) or next((v for k, v in name_map.items() if k.lower() in readable.lower()), readable)
+        ci, nc   = m.get("chunk_idx", ""), m.get("n_chunks", 1)
+        page     = f"p.~{max(1,round((int(ci)/int(nc))*_get_doc_pages(fname)))}" if str(ci).isdigit() and nc else ""
         maps[f"[REG-{i}]"] = f"**{friendly}{' — '+page if page else ''}**"
     for tag, label in maps.items():
         text = text.replace(tag, label)
@@ -417,25 +343,20 @@ def render_badges(sources):
     if "transactions"   in sources: h += '<span class="badge badge-txn">📊 Transactions</span>'
     if "graph_captions" in sources: h += '<span class="badge badge-graph">🕸 Graph Analysis</span>'
     if "regulations"    in sources: h += '<span class="badge badge-reg">📄 Regulations</span>'
-    return h + '</div>'
+    return h + "</div>"
 
 def render_score(sd):
     if not sd: return ""
-    cls = {"CRITICAL":"score-critical","HIGH":"score-high","MEDIUM":"score-medium","LOW":"score-low"}.get(sd.get("level",""),"score-medium")
-    flags = " · ".join(sd.get("flags",[]))
+    cls   = {"CRITICAL": "score-critical", "HIGH": "score-high", "MEDIUM": "score-medium", "LOW": "score-low"}.get(sd.get("level", ""), "score-medium")
+    flags = " · ".join(sd.get("flags", []))
     return f'<div class="score-block {cls}">🚨 {sd.get("score",0)}/10 [{sd.get("level","")}] &nbsp;|&nbsp; {sd.get("reason","")}{"&nbsp;·&nbsp;"+flags if flags else ""}</div>'
 
 def render_agent_trace(output):
-    """Show agentic loop metadata — pipeline chosen, retries, relevance score."""
     pipeline  = output.get("pipeline", "both")
     retries   = output.get("retry_count", 0)
     relevance = output.get("relevance_score", 0.0)
     retry_str = f" · 🔄 self-corrected {retries}x" if retries > 0 else ""
-    return (
-        f'<div class="agent-box">'
-        f'⬡ AGENT · pipeline={pipeline} · relevance={relevance:.2f}{retry_str}'
-        f'</div>'
-    )
+    return f'<div class="agent-box">⬡ AGENT · pipeline={pipeline} · relevance={relevance:.2f}{retry_str}</div>'
 
 def render_expander(results, show_scores):
     tabs_l = []
@@ -448,13 +369,12 @@ def render_expander(results, show_scores):
         with tabs[idx]:
             for r in results["transactions"]:
                 m = r["metadata"]
-                susp_label  = '🚨 **SUSPICIOUS**' if m.get('is_suspicious') else '✅ Normal'
-                score_label = f' | Rerank: `{r.get("rerank_score", 0):.3f}`' if show_scores else ''
                 st.markdown(
                     f"**Account:** `{m.get('sender_account','?')}` → `{m.get('receiver_account','?')}`\n\n"
                     f"**Amount:** £{float(m.get('amount',0)):,.2f} | **Typology:** `{m.get('typology','?')}`\n\n"
                     f"**Route:** {m.get('sender_location','?')} → {m.get('receiver_location','?')}\n\n"
-                    f"{susp_label}{score_label}"
+                    f"{'🚨 **SUSPICIOUS**' if m.get('is_suspicious') else '✅ Normal'}"
+                    f"{f' | Rerank: `{r.get(chr(114)+chr(101)+chr(114)+chr(97)+chr(110)+chr(107)+chr(95)+chr(115)+chr(99)+chr(111)+chr(114)+chr(101),0):.3f}`' if show_scores else ''}"
                 )
                 st.divider()
         idx += 1
@@ -462,7 +382,7 @@ def render_expander(results, show_scores):
         with tabs[idx]:
             for r in results["graph_captions"]:
                 st.markdown(f"**Graph:** `{r['metadata'].get('graph_id','?')}`")
-                st.markdown(r["document"][:600]+"...")
+                st.markdown(r["document"][:600] + "...")
                 if show_scores: st.caption(f"Rerank: {r.get('rerank_score',0):.3f}")
                 st.divider()
         idx += 1
@@ -470,7 +390,7 @@ def render_expander(results, show_scores):
         with tabs[idx]:
             for r in results["regulations"]:
                 st.markdown(f"**Source:** `{r['metadata'].get('filename','?')}` — chunk {r['metadata'].get('chunk_idx','?')}")
-                st.markdown(r["document"][:400]+"...")
+                st.markdown(r["document"][:400] + "...")
                 if show_scores: st.caption(f"Rerank: {r.get('rerank_score',0):.3f}")
                 st.divider()
 
@@ -495,13 +415,12 @@ for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f'<div class="user-bubble">🔎 {msg["content"]}</div>', unsafe_allow_html=True)
     else:
-        html = (
+        st.markdown(
             f'<div class="assistant-bubble">{msg["content"]}'
-            + render_badges(msg.get("sources",[]))
+            + render_badges(msg.get("sources", []))
             + render_score(msg.get("score_data"))
-            + "</div>"
+            + "</div>", unsafe_allow_html=True
         )
-        st.markdown(html, unsafe_allow_html=True)
         if show_agent and msg.get("agent_output"):
             st.markdown(render_agent_trace(msg["agent_output"]), unsafe_allow_html=True)
         if show_graphs and msg.get("retrieval"):
@@ -517,72 +436,71 @@ def handle_query(query):
     if not guard["allowed"]:
         st.markdown(f'<div class="guardrail-block">{guard["response"]}</div>', unsafe_allow_html=True)
         st.session_state.messages += [
-            {"role":"user","content":query},
-            {"role":"assistant","content":guard["response"],"sources":[],"score_data":None,"retrieval":{},"agent_output":None}
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": guard["response"], "sources": [],
+             "score_data": None, "retrieval": {}, "agent_output": None},
         ]
         return
 
     st.markdown(f'<div class="user-bubble">🔎 {query}</div>', unsafe_allow_html=True)
     if guard.get("warning"):
         st.markdown(f'<div class="warning-block">💡 {guard["warning"]}</div>', unsafe_allow_html=True)
-    if any(w in query.lower() for w in ["smurf","aggregat"]):
+    if any(w in query.lower() for w in ["smurf", "aggregat"]):
         st.markdown('<div class="tip-box">💡 <b>Terminology note:</b> FATF formally calls smurfing <b>"placement via aggregation"</b>. Query expanded automatically.</div>', unsafe_allow_html=True)
 
-    # ── Agentic retrieval + generation ──
-    with st.spinner("⬡ Agent reasoning — routing → expanding → retrieving → grading..."):
-        output = agent.run(query)
+    # ── Agent or direct fallback ──
+    if agent is not None:
+        with st.spinner("⬡ Agent reasoning — routing → expanding → retrieving → grading..."):
+            output = agent.run(query)
+    else:
+        with st.spinner("🔍 Retrieving & generating..."):
+            results  = retriever.retrieve(query, top_k=top_k)
+            raw_out  = generator.generate(query, results)
+            output   = {
+                "answer":          raw_out["answer"],
+                "sources":         raw_out["sources"],
+                "suspicion_score": generator.score_suspicion(results["transactions"][0]["document"]) if results.get("transactions") else None,
+                "raw_results":     results,
+                "relevance_score": 0.0,
+                "retry_count":     0,
+                "pipeline":        "direct",
+            }
 
-    results    = output["raw_results"]
-    raw        = output["answer"]
-    sources    = output["sources"]
-    contexts   = [r["document"] for r in results.get("all_results", [])]
-    out_guard  = Guardrails.check_output(raw, contexts)
+    results   = output["raw_results"]
+    raw       = output["answer"]
+    sources   = output["sources"]
+    contexts  = [r["document"] for r in results.get("all_results", [])]
+    out_guard = Guardrails.check_output(raw, contexts)
     if not out_guard["valid"]:
         raw = f"⚠️ {out_guard['issue']} Please try rephrasing."
     answer     = ResponseFormatter.format(humanise_citations(raw, results))
     score_data = output.get("suspicion_score")
 
-    # ── Render answer ──
-    html = (
+    st.markdown(
         f'<div class="assistant-bubble">{answer}'
         + render_badges(sources)
         + render_score(score_data)
-        + "</div>"
+        + "</div>", unsafe_allow_html=True
     )
-    st.markdown(html, unsafe_allow_html=True)
-
-    # ── Agent trace ──
     if show_agent:
         st.markdown(render_agent_trace(output), unsafe_allow_html=True)
-
-    # ── Graph images ──
     if show_graphs:
         GraphRenderer.render(results)
-
-    # ── Source chunks ──
     if show_sources:
         with st.expander("📂 Retrieved Context", expanded=False):
             render_expander(results, show_scores)
 
-    # ── Save to history ──
     st.session_state.messages += [
-        {"role":"user","content":query},
-        {
-            "role":         "assistant",
-            "content":      answer,
-            "sources":      sources,
-            "score_data":   score_data,
-            "retrieval":    results,
-            "agent_output": output,
-        }
+        {"role": "user", "content": query},
+        {"role": "assistant", "content": answer, "sources": sources,
+         "score_data": score_data, "retrieval": results, "agent_output": output},
     ]
-    # Auto-save session after every exchange
     st.session_state.session_name = auto_name(st.session_state.messages)
     save_session(st.session_state.session_id, st.session_state.session_name, st.session_state.messages)
 
 
-# ── VOICE INPUT ──
-if voice_mode:
+# ── VOICE ──
+if voice_mode and voice is not None:
     st.markdown("---")
     try:
         audio_bytes = voice.render_widget()
@@ -597,7 +515,7 @@ if voice_mode:
                     except Exception as e:
                         st.error(f"Transcription failed: {e}")
     except Exception as e:
-        st.error(f"Voice input error: {e}")
+        st.error(f"Voice error: {e}")
 
 
 # ── INPUT ──
