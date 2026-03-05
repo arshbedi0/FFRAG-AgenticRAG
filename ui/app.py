@@ -35,37 +35,31 @@ def _load_secrets():
 
 _load_secrets()
 
-# ── ChromaDB bootstrap (cached — runs once per deployment) ──
-@st.cache_resource(show_spinner=False)
+# ── ChromaDB check — DB is committed directly to the repo ──
+# No download needed; Streamlit Cloud clones the full repo including chroma_db/
 def _ensure_chroma():
-    if Path("chroma_db/chroma.sqlite3").exists():
-        return True
-    # Try GitHub release download
-    try:
-        import urllib.request, zipfile
-        url = "https://github.com/arshbedi0/FFRAG-AgenticRAG/releases/download/v1.0/chroma_db.zip"
-        urllib.request.urlretrieve(url, "chroma_db_temp.zip")
-        with zipfile.ZipFile("chroma_db_temp.zip", "r") as z:
-            z.extractall(".")
-        os.remove("chroma_db_temp.zip")
-        if Path("chroma_db/chroma.sqlite3").exists():
-            return True
-    except Exception:
-        pass
-    # Fallback: build from source data
+    sqlite = Path("chroma_db/chroma.sqlite3")
+    if sqlite.exists():
+        return True, None
+    # DB missing — try rebuilding from source as last resort
     try:
         r = subprocess.run(
             [sys.executable, "ingestion/ingest_to_chroma.py"],
             capture_output=True, text=True, timeout=300
         )
-        return r.returncode == 0 and Path("chroma_db/chroma.sqlite3").exists()
-    except Exception:
-        return False
+        if r.returncode == 0 and sqlite.exists():
+            return True, None
+        return False, r.stderr[:300]
+    except Exception as e:
+        return False, str(e)
 
-with st.spinner("🗄️ Initialising database..."):
-    if not _ensure_chroma():
-        st.error("🚨 ChromaDB failed to initialise. Check that data files are present in the repo.")
-        st.stop()
+_chroma_ok, _chroma_err = _ensure_chroma()
+if not _chroma_ok:
+    st.error("🚨 chroma_db/chroma.sqlite3 not found.")
+    st.info("Make sure `chroma_db/` is committed to your GitHub repo and not in `.gitignore`.")
+    if _chroma_err:
+        st.code(_chroma_err)
+    st.stop()
 
 # ── Pipeline (cached — loads once, stays in memory) ──
 @st.cache_resource(show_spinner=False)
