@@ -22,14 +22,25 @@ Run:
   python retrieval/langgraph_orchestrator.py
 """
 
+
 import os, json
 from typing import TypedDict, Literal, Annotated
-from dotenv import load_dotenv
-load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-LLM_MODEL    = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-MAX_RETRIES  = 2   # max rewrite+retrieve loops before accepting
+# Universal config loader for local (.env) and Streamlit Cloud (st.secrets)
+def get_config(var, default=None, cast_type=None):
+    try:
+        import streamlit as st
+        value = st.secrets.get(var, None)
+        if value is not None:
+            return cast_type(value) if cast_type else value
+    except ImportError:
+        pass
+    value = os.getenv(var, default)
+    return cast_type(value) if cast_type and value is not None else value
+
+GROQ_API_KEY = get_config("GROQ_API_KEY")
+LLM_MODEL    = get_config("LLM_MODEL", "llama-3.3-70b-versatile")
+MAX_RETRIES  = get_config("MAX_RETRIES", 2, int)   # max rewrite+retrieve loops before accepting
 
 try:
     from langgraph.graph import StateGraph, END

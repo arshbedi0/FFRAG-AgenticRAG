@@ -20,9 +20,22 @@ Usage:
   # Each chunk: {"text": ..., "window": ..., "parent": ..., "metadata": ...}
 """
 
+
 import re
 import os
 from pathlib import Path
+
+# Universal config loader for local (.env) and Streamlit Cloud (st.secrets)
+def get_config(var, default=None, cast_type=None):
+    try:
+        import streamlit as st
+        value = st.secrets.get(var, None)
+        if value is not None:
+            return cast_type(value) if cast_type else value
+    except ImportError:
+        pass
+    value = os.getenv(var, default)
+    return cast_type(value) if cast_type and value is not None else value
 
 
 class SemanticChunker:

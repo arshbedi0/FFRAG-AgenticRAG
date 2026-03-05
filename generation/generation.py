@@ -15,15 +15,25 @@ Or run standalone to test:
   python generation/generation.py
 """
 
+
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+# Universal config loader for local (.env) and Streamlit Cloud (st.secrets)
+def get_config(var, default=None, cast_type=None):
+    try:
+        import streamlit as st
+        value = st.secrets.get(var, None)
+        if value is not None:
+            return cast_type(value) if cast_type else value
+    except ImportError:
+        pass
+    value = os.getenv(var, default)
+    return cast_type(value) if cast_type and value is not None else value
 
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-LLM_MODEL     = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-MAX_TOKENS    = int(os.getenv("MAX_TOKENS", "1024"))
-TEMPERATURE   = float(os.getenv("TEMPERATURE", "0.1"))  # low = factual, consistent
+GROQ_API_KEY  = get_config("GROQ_API_KEY")
+LLM_MODEL     = get_config("LLM_MODEL", "llama-3.3-70b-versatile")
+MAX_TOKENS    = get_config("MAX_TOKENS", 1024, int)
+TEMPERATURE   = get_config("TEMPERATURE", 0.1, float)  # low = factual, consistent
 
 try:
     from groq import Groq

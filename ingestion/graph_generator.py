@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -7,9 +8,21 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import os, json
 
-# ── OUTPUT DIRS ──
-OUT_DIR = "/data/wallet_graphs"
-META_FILE = "/data/graph_metadata.json"
+# Universal config loader for local (.env) and Streamlit Cloud (st.secrets)
+def get_config(var, default=None, cast_type=None):
+    try:
+        import streamlit as st
+        value = st.secrets.get(var, None)
+        if value is not None:
+            return cast_type(value) if cast_type else value
+    except ImportError:
+        pass
+    value = os.getenv(var, default)
+    return cast_type(value) if cast_type and value is not None else value
+
+# OUTPUT DIRS
+OUT_DIR = get_config("OUT_DIR", "data/wallet_graphs")
+META_FILE = get_config("META_FILE", "data/graph_metadata.json")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ── LOAD DATA ──

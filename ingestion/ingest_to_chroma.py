@@ -15,22 +15,32 @@ Collections created:
   - regulations    : FATF / FinCEN / OCC PDF chunks
 """
 
+
 import os, json, re, csv
 from pathlib import Path
-from dotenv import load_dotenv
 
-load_dotenv()
+# Universal config loader for local (.env) and Streamlit Cloud (st.secrets)
+def get_config(var, default=None, cast_type=None):
+    try:
+        import streamlit as st
+        value = st.secrets.get(var, None)
+        if value is not None:
+            return cast_type(value) if cast_type else value
+    except ImportError:
+        pass
+    value = os.getenv(var, default)
+    return cast_type(value) if cast_type and value is not None else value
 
-# ── CONFIG FROM .env ──
-TRANSACTIONS_FILE = os.getenv("TRANSACTIONS_FILE", "data/transactions/saml_synthetic_1000.csv")
-CAPTIONS_FILE     = os.getenv("CAPTIONS_FILE",     "data/graph_captions.json")
-REGULATIONS_DIR   = os.getenv("REGULATIONS_DIR",   "data/regulations")
-CHROMA_DIR        = os.getenv("CHROMA_DIR",         "chroma_db")
-EMBEDDING_MODEL   = os.getenv("EMBEDDING_MODEL",    "BAAI/bge-small-en-v1.5")
+# ── CONFIG ──
+TRANSACTIONS_FILE = get_config("TRANSACTIONS_FILE", "data/transactions/saml_synthetic_1000.csv")
+CAPTIONS_FILE     = get_config("CAPTIONS_FILE",     "data/graph_captions.json")
+REGULATIONS_DIR   = get_config("REGULATIONS_DIR",   "data/regulations")
+CHROMA_DIR        = get_config("CHROMA_DIR",        "chroma_db")
+EMBEDDING_MODEL   = get_config("EMBEDDING_MODEL",   "BAAI/bge-small-en-v1.5")
 
 # Chunking config
-PDF_CHUNK_SIZE    = int(os.getenv("PDF_CHUNK_SIZE",    "800"))   # characters
-PDF_CHUNK_OVERLAP = int(os.getenv("PDF_CHUNK_OVERLAP", "150"))
+PDF_CHUNK_SIZE    = get_config("PDF_CHUNK_SIZE",    800, int)   # characters
+PDF_CHUNK_OVERLAP = get_config("PDF_CHUNK_OVERLAP", 150, int)
 
 # ── IMPORTS ──
 try:
