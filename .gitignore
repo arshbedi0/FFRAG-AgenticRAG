@@ -39,9 +39,9 @@ wheels/
 *.egg
 
 # ChromaDB (large vector database - use separately or Git LFS)
-chroma_db/
-*.db
-*.sqlite3
+# chroma_db/
+# *.db
+# *.sqlite3
 
 # Chat sessions & temp files
 chat_sessions/
