@@ -1,0 +1,152 @@
+{
+  "eval_type": "input",
+  "eval_date": "2026-03-05T17:23:20.767639",
+  "guardrails": {
+    "accuracy": 0.9286,
+    "precision": 0.8571,
+    "recall": 1.0,
+    "f1": 0.9231,
+    "total": 28,
+    "correct": 26,
+    "tp": 12,
+    "fp": 2,
+    "fn": 0,
+    "tn": 14,
+    "per_category": {
+      "off_topic": {
+        "accuracy": 1.0
+      },
+      "injection": {
+        "accuracy": 1.0
+      },
+      "empty": {
+        "accuracy": 1.0
+      },
+      "vague_aml": {
+        "accuracy": 0.0
+      },
+      "aml_txn": {
+        "accuracy": 0.8888888888888888
+      },
+      "aml_reg": {
+        "accuracy": 1.0
+      },
+      "aml_graph": {
+        "accuracy": 1.0
+      }
+    },
+    "failures": [
+      {
+        "query": "hi",
+        "category": "vague_aml",
+        "expected": "allow",
+        "actual": "block",
+        "reason": "empty_query",
+        "passed": false
+      },
+      {
+        "query": "What typologies are in our dataset?",
+        "category": "aml_txn",
+        "expected": "allow",
+        "actual": "block",
+        "reason": "off_topic",
+        "passed": false
+      }
+    ]
+  },
+  "query_rewriting": {
+    "pass_rate": 0.6,
+    "avg_variants": 4.0,
+    "avg_coverage": 0.4,
+    "results": [
+      {
+        "original": "smurfing",
+        "n_variants": 4,
+        "meets_min": true,
+        "coverage": 0.25,
+        "hits": [
+          "structuring"
+        ],
+        "passed": false,
+        "elapsed": 0.99,
+        "variants": [
+          "smurfing",
+          "What is the definition of structuring in the context of money laundering?",
+          "How does the Financial Action Task Force define and address smurfing activities?",
+          "What are the typical characteristics and detection methods for smurfing transactions in anti-money laundering?"
+        ]
+      },
+      {
+        "original": "layering transactions",
+        "n_variants": 4,
+        "meets_min": true,
+        "coverage": 0.5,
+        "hits": [
+          "transfer",
+          "obscure"
+        ],
+        "passed": true,
+        "elapsed": 0.76,
+        "variants": [
+          "layering transactions",
+          "typology of layering in money laundering schemes",
+          "anti-money laundering techniques to detect layered transactions",
+          "FATF guidance on identifying and preventing layering transactions"
+        ]
+      },
+      {
+        "original": "SAR timeline",
+        "n_variants": 4,
+        "meets_min": true,
+        "coverage": 0.75,
+        "hits": [
+          "30 days",
+          "filing",
+          "suspicious activity report"
+        ],
+        "passed": true,
+        "elapsed": 0.73,
+        "variants": [
+          "SAR timeline",
+          "Suspicious Activity Report filing timeline according to FATF guidelines",
+          "Anti-Money Laundering regulatory requirements for SAR submission deadlines",
+          "Financial Action Task Force recommendations on Suspicious Transaction Report processing timeframe"
+        ]
+      },
+      {
+        "original": "UAE transfers",
+        "n_variants": 4,
+        "meets_min": true,
+        "coverage": 0.5,
+        "hits": [
+          "cross-border",
+          "suspicious"
+        ],
+        "passed": true,
+        "elapsed": 0.52,
+        "variants": [
+          "UAE transfers",
+          "United Arab Emirates financial transactions",
+          "FATF recommendations on UAE cross-border payments",
+          "Money laundering risks associated with UAE wire transfers"
+        ]
+      },
+      {
+        "original": "dormant accounts",
+        "n_variants": 4,
+        "meets_min": true,
+        "coverage": 0.0,
+        "hits": [],
+        "passed": false,
+        "elapsed": 0.55,
+        "variants": [
+          "dormant accounts",
+          "definition of inactive accounts in anti-money laundering regulations",
+          "FATF guidelines on dormant account monitoring and reporting",
+          "best practices for identifying and managing inactive customer accounts in financial institutions"
+        ]
+      }
+    ]
+  },
+  "combined_input_score": 0.7216
+}

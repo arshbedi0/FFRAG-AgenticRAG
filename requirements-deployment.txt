@@ -1,0 +1,38 @@
+# FFRAGCB Deployment Requirements
+# Production-ready dependencies for Streamlit Cloud deployment
+# Updated: March 2026
+
+# Core Data & Scientific Computing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# UI Framework
+streamlit>=1.28.0
+plotly>=5.17.0
+
+# Vector Database & Embeddings
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+hnswlib>=0.7.0
+
+# Knowledge Graph
+networkx>=3.2
+py2neo>=2022.4.0
+
+# LLM & Generation
+groq>=0.4.0
+langchain>=0.1.0
+langgraph>=0.0.22
+
+# Document Processing
+pdfplumber>=0.10.0
+
+# Configuration & Environment
+python-dotenv>=1.0.0
+
+# HTTP & API
+requests>=2.31.0
+
+# Optional: For production monitoring (recommended)
+# streamlit-analytics>=0.0.5

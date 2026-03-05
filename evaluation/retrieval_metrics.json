@@ -1,0 +1,206 @@
+{
+  "eval_type": "retrieval_metrics",
+  "eval_date": "2026-03-05T19:50:21.996249",
+  "n_queries": 10,
+  "hybrid": {
+    "label": "Hybrid",
+    "mean_precision": 0.8,
+    "mean_recall": 0.3798,
+    "mrr": 0.8,
+    "per_query": [
+      {
+        "query": "Show structuring transactions below \u00a310,000",
+        "collection": "transactions",
+        "precision_at_k": 0.8,
+        "recall_at_k": 0.2105,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 19,
+        "k": 5
+      },
+      {
+        "query": "SAR filing timeline continuing suspicious activity",
+        "collection": "regulations",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.0485,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 103,
+        "k": 5
+      },
+      {
+        "query": "Find dormant accounts suddenly reactivated",
+        "collection": "transactions",
+        "precision_at_k": 0.8,
+        "recall_at_k": 0.5,
+        "reciprocal_rank": 0.5,
+        "total_relevant": 8,
+        "k": 5
+      },
+      {
+        "query": "FATF placement aggregation smurfing",
+        "collection": "regulations",
+        "precision_at_k": 0.6,
+        "recall_at_k": 0.1579,
+        "reciprocal_rank": 0.5,
+        "total_relevant": 19,
+        "k": 5
+      },
+      {
+        "query": "Which accounts sent money to UAE high risk corridor",
+        "collection": "transactions",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.625,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 8,
+        "k": 5
+      },
+      {
+        "query": "Layering transactions network graph analysis",
+        "collection": "graph_captions",
+        "precision_at_k": 0.2,
+        "recall_at_k": 1.0,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 1,
+        "k": 5
+      },
+      {
+        "query": "Round trip transactions circular fund flow",
+        "collection": "transactions",
+        "precision_at_k": 0.8,
+        "recall_at_k": 0.5,
+        "reciprocal_rank": 0.5,
+        "total_relevant": 8,
+        "k": 5
+      },
+      {
+        "query": "Currency mismatch payment received currency",
+        "collection": "transactions",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.2941,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 17,
+        "k": 5
+      },
+      {
+        "query": "FATF recommendations enhanced due diligence PEP",
+        "collection": "regulations",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.1282,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 39,
+        "k": 5
+      },
+      {
+        "query": "Rapid succession high frequency transactions",
+        "collection": "transactions",
+        "precision_at_k": 0.8,
+        "recall_at_k": 0.3333,
+        "reciprocal_rank": 0.5,
+        "total_relevant": 12,
+        "k": 5
+      }
+    ]
+  },
+  "baseline": {
+    "label": "Baseline",
+    "mean_precision": 0.54,
+    "mean_recall": 0.266,
+    "mrr": 0.6,
+    "per_query": [
+      {
+        "query": "Show structuring transactions below \u00a310,000",
+        "collection": "transactions",
+        "precision_at_k": 0.6,
+        "recall_at_k": 0.1579,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 19,
+        "k": 5
+      },
+      {
+        "query": "SAR filing timeline continuing suspicious activity",
+        "collection": "regulations",
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "reciprocal_rank": 0.0,
+        "total_relevant": 103,
+        "k": 5
+      },
+      {
+        "query": "Find dormant accounts suddenly reactivated",
+        "collection": "transactions",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.625,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 8,
+        "k": 5
+      },
+      {
+        "query": "FATF placement aggregation smurfing",
+        "collection": "regulations",
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "reciprocal_rank": 0.0,
+        "total_relevant": 19,
+        "k": 5
+      },
+      {
+        "query": "Which accounts sent money to UAE high risk corridor",
+        "collection": "transactions",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.625,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 8,
+        "k": 5
+      },
+      {
+        "query": "Layering transactions network graph analysis",
+        "collection": "graph_captions",
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "reciprocal_rank": 0.0,
+        "total_relevant": 1,
+        "k": 5
+      },
+      {
+        "query": "Round trip transactions circular fund flow",
+        "collection": "transactions",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.625,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 8,
+        "k": 5
+      },
+      {
+        "query": "Currency mismatch payment received currency",
+        "collection": "transactions",
+        "precision_at_k": 1.0,
+        "recall_at_k": 0.2941,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 17,
+        "k": 5
+      },
+      {
+        "query": "FATF recommendations enhanced due diligence PEP",
+        "collection": "regulations",
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "reciprocal_rank": 0.0,
+        "total_relevant": 39,
+        "k": 5
+      },
+      {
+        "query": "Rapid succession high frequency transactions",
+        "collection": "transactions",
+        "precision_at_k": 0.8,
+        "recall_at_k": 0.3333,
+        "reciprocal_rank": 1.0,
+        "total_relevant": 12,
+        "k": 5
+      }
+    ]
+  },
+  "delta": {
+    "precision": 0.26,
+    "recall": 0.1138,
+    "mrr": 0.2
+  }
+}

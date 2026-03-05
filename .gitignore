@@ -1,0 +1,77 @@
+# Environment variables (NEVER commit)
+.env
+.env.local
+.env.*.local
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ChromaDB (large vector database - use separately or Git LFS)
+chroma_db/
+*.db
+*.sqlite3
+
+# Chat sessions & temp files
+chat_sessions/
+*.tmp
+*.bak
+
+
+# Large files (use with Git LFS if needed)
+*.csv
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Evaluation cache
+ragas_cache.json
+*.cache
+
+# Test outputs
+test_results/
+test_output.json
+
+# Mirror of the repository
+git clone --mirror https://github.com/arshbedi0/FFRAG-AgenticRAG.git FFRAGCB-mirror

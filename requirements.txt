@@ -1,0 +1,9 @@
+numpy
+pandas
+networkx
+matplotlib
+chromadb 
+sentence-transformers 
+pdfplumber
+streamlit
+plotly

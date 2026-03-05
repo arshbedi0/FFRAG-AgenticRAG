@@ -1,0 +1,145 @@
+{
+  "eval_type": "output",
+  "eval_date": "2026-03-05T17:44:42.200642",
+  "ragas": {
+    "faithfulness": 0.0,
+    "answer_relevancy": 0.0,
+    "context_precision": 0.0,
+    "context_recall": 0.0,
+    "average": 0.0
+  },
+  "formatting": {
+    "avg_score": 0.857,
+    "perfect_rate": 0.2,
+    "per_check": {
+      "no_chunk_refs": 1.0,
+      "no_raw_tags": 1.0,
+      "no_md_intro": 1.0,
+      "has_html_sections": 0.8,
+      "sufficient_sections": 0.2,
+      "non_empty": 1.0,
+      "has_sources": 1.0
+    },
+    "results": [
+      {
+        "query": "What is the SAR filing timeline for continuing sus",
+        "checks": {
+          "no_chunk_refs": true,
+          "no_raw_tags": true,
+          "no_md_intro": true,
+          "has_html_sections": true,
+          "sufficient_sections": true,
+          "non_empty": true,
+          "has_sources": true
+        },
+        "score": 1.0,
+        "passed_all": true
+      },
+      {
+        "query": "Show structuring transactions below \u00a310,000",
+        "checks": {
+          "no_chunk_refs": true,
+          "no_raw_tags": true,
+          "no_md_intro": true,
+          "has_html_sections": true,
+          "sufficient_sections": false,
+          "non_empty": true,
+          "has_sources": true
+        },
+        "score": 0.857,
+        "passed_all": false
+      },
+      {
+        "query": "Find dormant accounts that were suddenly reactivat",
+        "checks": {
+          "no_chunk_refs": true,
+          "no_raw_tags": true,
+          "no_md_intro": true,
+          "has_html_sections": true,
+          "sufficient_sections": false,
+          "non_empty": true,
+          "has_sources": true
+        },
+        "score": 0.857,
+        "passed_all": false
+      },
+      {
+        "query": "What does FATF say about placement and aggregation",
+        "checks": {
+          "no_chunk_refs": true,
+          "no_raw_tags": true,
+          "no_md_intro": true,
+          "has_html_sections": true,
+          "sufficient_sections": false,
+          "non_empty": true,
+          "has_sources": true
+        },
+        "score": 0.857,
+        "passed_all": false
+      },
+      {
+        "query": "Explain layering patterns in our transactions",
+        "checks": {
+          "no_chunk_refs": true,
+          "no_raw_tags": true,
+          "no_md_intro": true,
+          "has_html_sections": false,
+          "sufficient_sections": false,
+          "non_empty": true,
+          "has_sources": true
+        },
+        "score": 0.714,
+        "passed_all": false
+      }
+    ]
+  },
+  "suspicion": {
+    "pass_rate": 1.0,
+    "avg_score_high": 8.0,
+    "avg_score_low": 2.0,
+    "score_separation": 6.0,
+    "results": [
+      {
+        "text": "Account 176667861 sent \u00a382,230 to account in UAE via cross-b",
+        "expected_level": "HIGH",
+        "actual_level": "HIGH",
+        "score": 8,
+        "passed": true,
+        "check": "score>=7, got 8"
+      },
+      {
+        "text": "Account 100614068 sent \u00a38,679 to account 465260635. Status: ",
+        "expected_level": "HIGH",
+        "actual_level": "HIGH",
+        "score": 8,
+        "passed": true,
+        "check": "score>=6, got 8"
+      },
+      {
+        "text": "Account 507943839 sent \u00a341,234 to Turkey account. Status: SU",
+        "expected_level": "HIGH",
+        "actual_level": "HIGH",
+        "score": 8,
+        "passed": true,
+        "check": "score>=7, got 8"
+      },
+      {
+        "text": "Account 123456789 sent \u00a3450 to account 987654321. Status: NO",
+        "expected_level": "LOW",
+        "actual_level": "LOW",
+        "score": 2,
+        "passed": true,
+        "check": "score<=4, got 2"
+      },
+      {
+        "text": "Account 111111111 sent \u00a31,200 to account 222222222 via bank ",
+        "expected_level": "LOW",
+        "actual_level": "LOW",
+        "score": 2,
+        "passed": true,
+        "check": "score<=4, got 2"
+      }
+    ]
+  },
+  "combined_output_score": 0.4571
+}
