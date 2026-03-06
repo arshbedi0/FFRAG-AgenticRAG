@@ -741,11 +741,12 @@ if voice_mode and voice is not None:
                     st.session_state.voice_transcript = ""
                     st.session_state.voice_ready      = False
                     st.session_state.last_audio_hash  = None
+                    st.write(f"DEBUG: query = '{st.session_state.voice_transcript}'")
+                    st.write(f"DEBUG: voice_ready = {st.session_state.voice_ready}")
                     st.markdown("</div></div>", unsafe_allow_html=True)
                     handle_query(q)
                     st.stop()
-                    st.write(f"DEBUG: query = '{st.session_state.voice_transcript}'")
-                    st.write(f"DEBUG: voice_ready = {st.session_state.voice_ready}")
+                    
 
         elif audio is None:
             # No recording yet — idle state hint
