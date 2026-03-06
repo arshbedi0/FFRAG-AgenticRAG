@@ -723,12 +723,12 @@ if voice_mode and voice is not None:
                         use_container_width=True,
                         type="primary",
                     ):
-                        q = st.session_state.voice_transcript
-                        # Reset voice state before running query
+                        # Store query in pending_query — handled at bottom of script
+                        # after all widgets are rendered, same as sidebar suggestions.
+                        st.session_state.pending_query    = st.session_state.voice_transcript
                         st.session_state.voice_transcript = ""
                         st.session_state.voice_ready      = False
                         st.session_state.last_audio_hash  = None
-                        handle_query(q)
                         st.rerun()
                 with col_clear:
                     if st.button("✕ Clear", key="voice_clear_btn", use_container_width=True):
