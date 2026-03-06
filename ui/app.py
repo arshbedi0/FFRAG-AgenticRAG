@@ -665,97 +665,101 @@ if voice_mode and voice is not None:
     try:
         from streamlit_mic_recorder import mic_recorder
 
-        st.markdown("""
-        <div class="voice-panel">
-          <div class="voice-panel-header">
-            <span class="voice-dot"></span>
-            <span class="voice-panel-title">Voice Input — Whisper Large v3</span>
-          </div>
-          <div class="voice-panel-body" id="voice-body">
-        """, unsafe_allow_html=True)
+        # ── STEP 1: Handle send/clear FIRST — before any audio/widget logic.
+        # When the button is clicked, Streamlit reruns. On that rerun mic_recorder
+        # returns None (just_once=True), so we must act on session_state alone.
+        if st.session_state.get("voice_ready") and st.session_state.get("voice_transcript"):
 
-        # The recorder widget sits inside the panel body
-        audio = mic_recorder(
-            start_prompt="⏺  Start recording",
-            stop_prompt="⏹  Stop recording",
-            just_once=True,
-            use_container_width=True,
-            key="mic_recorder_widget",
-        )
+            st.markdown("""
+            <div class="voice-panel">
+              <div class="voice-panel-header">
+                <span class="voice-dot voice-dot-live"></span>
+                <span class="voice-panel-title">Voice Input — Whisper Large v3</span>
+              </div>
+              <div class="voice-panel-body">
+            """, unsafe_allow_html=True)
 
-        # ── Transcription: fires automatically when new audio arrives ──
-        if audio and audio.get("bytes") and len(audio["bytes"]) > 1000:
-            audio_hash = hash(audio["bytes"])
+            st.markdown(f"""
+            <div class="voice-transcript-box">
+              <div class="voice-transcript-label">Transcribed</div>
+              {st.session_state.voice_transcript}
+            </div>
+            """, unsafe_allow_html=True)
 
-            if audio_hash != st.session_state.last_audio_hash:
-                # New recording — transcribe immediately
-                st.session_state.last_audio_hash  = audio_hash
-                st.session_state.voice_ready      = False
+            col_send, col_clear = st.columns([3, 1])
+            with col_send:
+                send_clicked = st.button(
+                    "📤  Send to FFRAG",
+                    key="voice_send_btn",
+                    use_container_width=True,
+                    type="primary",
+                )
+            with col_clear:
+                clear_clicked = st.button(
+                    "✕ Clear",
+                    key="voice_clear_btn",
+                    use_container_width=True,
+                )
+
+            st.markdown("</div></div>", unsafe_allow_html=True)
+
+            if clear_clicked:
                 st.session_state.voice_transcript = ""
+                st.session_state.voice_ready      = False
+                st.session_state.last_audio_hash  = None
+                st.rerun()
 
-                with st.spinner("🎙 Transcribing with Whisper..."):
-                    try:
-                        transcript = voice.transcribe(audio["bytes"], filename="audio.wav")
-                        st.session_state.voice_transcript = transcript.strip()
-                        st.session_state.voice_ready      = True
-                    except Exception as e:
-                        st.markdown(
-                            f'<div class="voice-error">⚠ Transcription failed: {e}</div>',
-                            unsafe_allow_html=True
-                        )
+            if send_clicked:
+                q = st.session_state.voice_transcript
+                st.session_state.voice_transcript = ""
+                st.session_state.voice_ready      = False
+                st.session_state.last_audio_hash  = None
+                st.session_state.pending_query    = q
+                st.rerun()
 
-            # ── Show transcript + confirm button ──
-            if st.session_state.voice_ready and st.session_state.voice_transcript:
-                transcript = st.session_state.voice_transcript
+        else:
+            # ── STEP 2: No transcript yet — show recorder ──
+            st.markdown("""
+            <div class="voice-panel">
+              <div class="voice-panel-header">
+                <span class="voice-dot"></span>
+                <span class="voice-panel-title">Voice Input — Whisper Large v3</span>
+              </div>
+              <div class="voice-panel-body">
+            """, unsafe_allow_html=True)
 
-                st.markdown(f"""
-                <div class="voice-transcript-box">
-                  <div class="voice-transcript-label">Transcribed</div>
-                  {transcript}
-                </div>
-                """, unsafe_allow_html=True)
-
-                col_send, col_clear = st.columns([3, 1])
-                with col_send:
-                    send_clicked = st.button(
-                        "📤  Send to FFRAG",
-                        key="voice_send_btn",
-                        use_container_width=True,
-                        type="primary",
-                    )
-                with col_clear:
-                    clear_clicked = st.button(
-                        "✕ Clear",
-                        key="voice_clear_btn",
-                        use_container_width=True,
-                    )
-
-                if clear_clicked:
-                    st.session_state.voice_transcript = ""
-                    st.session_state.voice_ready      = False
-                    st.session_state.last_audio_hash  = None
-                    st.rerun()
-
-                if send_clicked:
-                    q = st.session_state.voice_transcript
-                    st.session_state.voice_transcript = ""
-                    st.session_state.voice_ready      = False
-                    st.session_state.last_audio_hash  = None
-                    st.write(f"DEBUG: query = '{st.session_state.voice_transcript}'")
-                    st.write(f"DEBUG: voice_ready = {st.session_state.voice_ready}")
-                    st.markdown("</div></div>", unsafe_allow_html=True)
-                    handle_query(q)
-                    st.stop()
-                    
-
-        elif audio is None:
-            # No recording yet — idle state hint
-            st.markdown(
-                '<div class="voice-send-hint">Press ⏺ to record · Recording stops automatically</div>',
-                unsafe_allow_html=True
+            audio = mic_recorder(
+                start_prompt="⏺  Start recording",
+                stop_prompt="⏹  Stop recording",
+                just_once=True,
+                use_container_width=True,
+                key="mic_recorder_widget",
             )
 
-        st.markdown("</div></div>", unsafe_allow_html=True)   # close panel
+            if audio and audio.get("bytes") and len(audio["bytes"]) > 1000:
+                audio_hash = hash(audio["bytes"])
+                if audio_hash != st.session_state.last_audio_hash:
+                    st.session_state.last_audio_hash  = audio_hash
+                    st.session_state.voice_ready      = False
+                    st.session_state.voice_transcript = ""
+                    with st.spinner("🎙 Transcribing with Whisper..."):
+                        try:
+                            transcript = voice.transcribe(audio["bytes"], filename="audio.wav")
+                            st.session_state.voice_transcript = transcript.strip()
+                            st.session_state.voice_ready      = True
+                            st.rerun()  # rerun to show transcript + send button
+                        except Exception as e:
+                            st.markdown(
+                                f'<div class="voice-error">⚠ Transcription failed: {e}</div>',
+                                unsafe_allow_html=True
+                            )
+            else:
+                st.markdown(
+                    '<div class="voice-send-hint">Press ⏺ to record · auto-transcribes on stop</div>',
+                    unsafe_allow_html=True
+                )
+
+            st.markdown("</div></div>", unsafe_allow_html=True)
 
     except ImportError:
         st.markdown("""
