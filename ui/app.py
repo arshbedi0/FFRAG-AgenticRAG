@@ -717,25 +717,35 @@ if voice_mode and voice is not None:
 
                 col_send, col_clear = st.columns([3, 1])
                 with col_send:
-                    if st.button(
+                    send_clicked = st.button(
                         "📤  Send to FFRAG",
                         key="voice_send_btn",
                         use_container_width=True,
                         type="primary",
-                    ):
-                        # Store query in pending_query — handled at bottom of script
-                        # after all widgets are rendered, same as sidebar suggestions.
-                        st.session_state.pending_query    = st.session_state.voice_transcript
-                        st.session_state.voice_transcript = ""
-                        st.session_state.voice_ready      = False
-                        st.session_state.last_audio_hash  = None
-                        st.rerun()
+                    )
                 with col_clear:
-                    if st.button("✕ Clear", key="voice_clear_btn", use_container_width=True):
-                        st.session_state.voice_transcript = ""
-                        st.session_state.voice_ready      = False
-                        st.session_state.last_audio_hash  = None
-                        st.rerun()
+                    clear_clicked = st.button(
+                        "✕ Clear",
+                        key="voice_clear_btn",
+                        use_container_width=True,
+                    )
+
+                if clear_clicked:
+                    st.session_state.voice_transcript = ""
+                    st.session_state.voice_ready      = False
+                    st.session_state.last_audio_hash  = None
+                    st.rerun()
+
+                if send_clicked:
+                    q = st.session_state.voice_transcript
+                    st.session_state.voice_transcript = ""
+                    st.session_state.voice_ready      = False
+                    st.session_state.last_audio_hash  = None
+                    st.markdown("</div></div>", unsafe_allow_html=True)
+                    handle_query(q)
+                    st.stop()
+                    st.write(f"DEBUG: query = '{st.session_state.voice_transcript}'")
+                    st.write(f"DEBUG: voice_ready = {st.session_state.voice_ready}")
 
         elif audio is None:
             # No recording yet — idle state hint
