@@ -7,6 +7,7 @@ Displays Precision@K, Recall@K, MRR comparisons between baseline vs hybrid
 
 import streamlit as st
 import json
+import datetime
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
@@ -31,6 +32,8 @@ THEME = {
     "baseline_color": "#ff6b6b",
 }
 
+HISTORY_FILE = Path("evaluation/metrics_history.json")
+
 
 def load_metrics() -> Dict[str, Any]:
     """Load retrieval metrics from JSON file."""
@@ -38,6 +41,47 @@ def load_metrics() -> Dict[str, Any]:
     if metrics_file.exists():
         return json.loads(metrics_file.read_text())
     return None
+
+
+def load_history() -> List[Dict[str, Any]]:
+    if HISTORY_FILE.exists():
+        try:
+            return json.loads(HISTORY_FILE.read_text())
+        except Exception:
+            return []
+    return []
+
+
+def save_history(history: List[Dict[str, Any]]):
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, default=str))
+
+
+def sync_history(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Append current metrics to history if changed."""
+    history = load_history()
+    hybrid = metrics.get("hybrid", {})
+    baseline = metrics.get("baseline", {})
+
+    entry = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "hybrid": {
+            "precision": hybrid.get("mean_precision", 0),
+            "recall": hybrid.get("mean_recall", 0),
+            "mrr": hybrid.get("mrr", 0),
+        },
+        "baseline": {
+            "precision": baseline.get("mean_precision", 0),
+            "recall": baseline.get("mean_recall", 0),
+            "mrr": baseline.get("mrr", 0),
+        },
+    }
+
+    if not history or history[-1].get("hybrid") != entry["hybrid"]:
+        history.append(entry)
+        save_history(history)
+
+    return history
 
 
 def create_metric_card(label: str, value: float, delta: float = None, is_percentage: bool = True):
@@ -63,6 +107,32 @@ def create_metric_card(label: str, value: float, delta: float = None, is_percent
         <div style="color:{THEME['text_muted']};font-size:11px;margin-top:4px;">{delta_text}</div>
     </div>
     """
+
+
+def create_animated_kpi(label: str, value: float, delta: float = None) -> str:
+    pct = max(0.0, min(1.0, value))
+    ring = int(pct * 100)
+    delta_text = ""
+    delta_class = "kpi-delta"
+    if delta is not None:
+        if delta >= 0:
+            delta_text = f"+{delta:.1%}"
+            delta_class = "kpi-delta kpi-delta-up"
+        else:
+            delta_text = f"{delta:.1%}"
+            delta_class = "kpi-delta kpi-delta-down"
+    else:
+        delta_text = "Δ —"
+
+    return (
+        f"<div class=\"kpi-card\">"
+        f"<div class=\"kpi-ring\" style=\"--p:{ring};\"></div>"
+        f"<div class=\"{delta_class}\">{delta_text}</div>"
+        f"<div class=\"kpi-label\">{label}</div>"
+        f"<div class=\"kpi-value\">{pct:.1%}</div>"
+        f"<div class=\"kpi-sweep\"></div>"
+        f"</div>"
+    )
 
 
 def render_comparison_bar_chart(metrics: Dict) -> go.Figure:
@@ -218,6 +288,80 @@ def render_per_query_performance(metrics: Dict) -> go.Figure:
     return fig
 
 
+def render_trend_chart(history: List[Dict[str, Any]]) -> go.Figure:
+    if not history:
+        return go.Figure()
+
+    timestamps = [h.get("timestamp") for h in history]
+    hybrid = [h.get("hybrid", {}) for h in history]
+    baseline = [h.get("baseline", {}) for h in history]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=[h.get("precision", 0) for h in hybrid],
+        name="Hybrid Precision",
+        mode="lines+markers",
+        line=dict(color=THEME["hybrid_color"], width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=[h.get("recall", 0) for h in hybrid],
+        name="Hybrid Recall",
+        mode="lines+markers",
+        line=dict(color=THEME["success"], width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=[h.get("mrr", 0) for h in hybrid],
+        name="Hybrid MRR",
+        mode="lines+markers",
+        line=dict(color=THEME["warning"], width=2),
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=[b.get("precision", 0) for b in baseline],
+        name="Baseline Precision",
+        mode="lines",
+        line=dict(color=THEME["baseline_color"], width=1, dash="dot"),
+        opacity=0.6,
+    ))
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=[b.get("recall", 0) for b in baseline],
+        name="Baseline Recall",
+        mode="lines",
+        line=dict(color="#ffb3b3", width=1, dash="dot"),
+        opacity=0.6,
+    ))
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=[b.get("mrr", 0) for b in baseline],
+        name="Baseline MRR",
+        mode="lines",
+        line=dict(color="#ffc38f", width=1, dash="dot"),
+        opacity=0.6,
+    ))
+
+    fig.update_layout(
+        title="Metric Trends Over Time",
+        hovermode="x unified",
+        template="plotly_dark",
+        plot_bgcolor="rgba(10, 16, 32, 0.5)",
+        paper_bgcolor="rgba(10, 16, 32, 0.3)",
+        font=dict(family="IBM Plex Sans, sans-serif", color=THEME["text"], size=11),
+        xaxis=dict(showgrid=False, color=THEME["text_muted"]),
+        yaxis=dict(showgrid=True, gridcolor="rgba(30, 48, 80, 0.3)", color=THEME["text_muted"], range=[0, 1.05]),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+        margin=dict(l=50, r=50, t=80, b=100),
+        height=420,
+    )
+
+    return fig
+
+
 def render_mrr_interpretation(mrr: float) -> str:
     """Render MRR interpretation text."""
     avg_rank = 1.0 / mrr if mrr > 0 else float('inf')
@@ -274,6 +418,10 @@ def render_summary_section(metrics: Dict):
     """Render comprehensive summary section."""
     baseline = metrics.get("baseline", {})
     hybrid = metrics.get("hybrid", {})
+    precision_delta = hybrid.get("mean_precision", 0) - baseline.get("mean_precision", 0)
+    recall_delta = hybrid.get("mean_recall", 0) - baseline.get("mean_recall", 0)
+    mrr_delta = hybrid.get("mrr", 0) - baseline.get("mrr", 0)
+    eval_date = metrics.get("eval_date") or "Latest run"
     
     st.markdown(f"""
     <div style="
@@ -285,13 +433,13 @@ def render_summary_section(metrics: Dict):
     ">
         <div style="color:{THEME['accent']};font-size:16px;font-weight:bold;margin-bottom:16px;">📊 Evaluation Summary</div>
         <div style="color:{THEME['text']};font-size:12px;line-height:1.8;">
-            <div><b>Evaluation Date:</b> {metrics.get('eval_date', 'N/A')}</div>
+            <div><b>Evaluation Date:</b> {eval_date}</div>
             <div><b>Queries Evaluated:</b> {metrics.get('n_queries', 0)}</div>
             <div style="margin-top:12px;"><b>Key Findings:</b></div>
             <ul style="margin-top:6px;margin-bottom:0;">
-                <li>Hybrid achieves <b>{hybrid.get('mean_precision', 0):.1%}</b> precision vs baseline <b>{baseline.get('mean_precision', 0):.1%}</b></li>
-                <li>Recall improved by <b>{(hybrid.get('mean_recall', 0) - baseline.get('mean_recall', 0)):.1%}</b> absolute points</li>
-                <li>MRR ranking improved by <b>{(hybrid.get('mrr', 0) - baseline.get('mrr', 0)):.1%}</b> (faster relevant results)</li>
+                <li>Precision@K <b>{hybrid.get('mean_precision', 0):.1%}</b> vs baseline <b>{baseline.get('mean_precision', 0):.1%}</b> (Δ {precision_delta:+.1%})</li>
+                <li>Recall@K <b>{hybrid.get('mean_recall', 0):.1%}</b> vs baseline <b>{baseline.get('mean_recall', 0):.1%}</b> (Δ {recall_delta:+.1%})</li>
+                <li>MRR <b>{hybrid.get('mrr', 0):.1%}</b> vs baseline <b>{baseline.get('mrr', 0):.1%}</b> (Δ {mrr_delta:+.1%})</li>
             </ul>
         </div>
     </div>
@@ -320,36 +468,91 @@ def render_dashboard_content():
     
     # ── SUMMARY SECTION ──
     render_summary_section(metrics)
+
+    history = sync_history(metrics)
     
-    # ── KEY METRICS CARDS ──
-    st.markdown("### 📈 Key Metrics Comparison")
-    
-    baseline = metrics.get("baseline", {})
+    # ── ANIMATED KPIS ──
+    st.markdown("### ⚡ Live Metrics Pulse")
+
     hybrid = metrics.get("hybrid", {})
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(create_metric_card(
-            "Precision@K",
-            hybrid.get("mean_precision", 0),
-            hybrid.get("mean_precision", 0) - baseline.get("mean_precision", 0)
-        ), unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(create_metric_card(
-            "Recall@K",
-            hybrid.get("mean_recall", 0),
-            hybrid.get("mean_recall", 0) - baseline.get("mean_recall", 0)
-        ), unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(create_metric_card(
-            "Mean Reciprocal Rank",
-            hybrid.get("mrr", 0),
-            hybrid.get("mrr", 0) - baseline.get("mrr", 0)
-        ), unsafe_allow_html=True)
-    
+    baseline = metrics.get("baseline", {})
+
+    prev = history[-2] if len(history) >= 2 else None
+    delta_precision = None
+    delta_recall = None
+    delta_mrr = None
+    if prev:
+        delta_precision = hybrid.get("mean_precision", 0) - prev.get("hybrid", {}).get("precision", 0)
+        delta_recall = hybrid.get("mean_recall", 0) - prev.get("hybrid", {}).get("recall", 0)
+        delta_mrr = hybrid.get("mrr", 0) - prev.get("hybrid", {}).get("mrr", 0)
+    else:
+        delta_precision = hybrid.get("mean_precision", 0) - baseline.get("mean_precision", 0)
+        delta_recall = hybrid.get("mean_recall", 0) - baseline.get("mean_recall", 0)
+        delta_mrr = hybrid.get("mrr", 0) - baseline.get("mrr", 0)
+
+    st.markdown("""
+    <style>
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .kpi-card {
+        position: relative;
+        background: radial-gradient(120px 120px at 20% 20%, rgba(0,217,255,0.12), rgba(10,16,32,0.6));
+        border: 1px solid rgba(0,217,255,0.2);
+        border-radius: 14px;
+        padding: 16px 16px 14px 16px;
+        overflow: hidden;
+        min-height: 150px;
+    }
+    .kpi-ring {
+        width: 92px;
+        height: 92px;
+        border-radius: 50%;
+        background: conic-gradient(#00d9ff calc(var(--p)*1%), rgba(15,30,56,0.8) 0);
+        mask: radial-gradient(farthest-side, transparent 62%, #000 63%);
+        animation: pulse 2.2s ease-in-out infinite;
+        margin-bottom: 6px;
+    }
+    .kpi-sweep {
+        position: absolute;
+        top: -20%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: conic-gradient(from 0deg, rgba(0,217,255,0) 0deg, rgba(0,217,255,0.12) 50deg, rgba(0,217,255,0) 110deg);
+        animation: sweep 3.5s linear infinite;
+        pointer-events: none;
+    }
+    .kpi-label { color: #6c88aa; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+    .kpi-value { color: #c8d0e0; font-size: 22px; font-weight: 700; }
+    .kpi-delta {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        background: rgba(6, 12, 24, 0.7);
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+    .kpi-delta-up { color: #3ddc84; text-shadow: 0 0 8px rgba(61,220,132,0.5); }
+    .kpi-delta-down { color: #ff6b6b; text-shadow: 0 0 8px rgba(255,107,107,0.5); }
+    @keyframes sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.85; } }
+    @media (max-width: 900px) { .kpi-grid { grid-template-columns: 1fr; } }
+    </style>
+    """, unsafe_allow_html=True)
+
+    kpi_html = "".join([
+        create_animated_kpi("Precision@K", hybrid.get("mean_precision", 0), delta_precision),
+        create_animated_kpi("Recall@K", hybrid.get("mean_recall", 0), delta_recall),
+        create_animated_kpi("MRR", hybrid.get("mrr", 0), delta_mrr),
+    ])
+    st.markdown(
+        f"<div class='kpi-grid'>{kpi_html}</div>",
+        unsafe_allow_html=True,
+    )
+
     # ── MRR INTERPRETATION ──
     st.markdown(render_mrr_interpretation(hybrid.get("mrr", 0)), unsafe_allow_html=True)
     
@@ -363,6 +566,10 @@ def render_dashboard_content():
     col_chart2 = st.container()
     fig_per_query = render_per_query_performance(metrics)
     col_chart2.plotly_chart(fig_per_query, use_container_width=True)
+
+    st.markdown("### 🧭 Trendline")
+    fig_trend = render_trend_chart(history)
+    st.plotly_chart(fig_trend, use_container_width=True)
     
     # ── DETAILED TABLE ──
     st.markdown("### 📋 Per-Query Breakdown (Hybrid Retriever)")

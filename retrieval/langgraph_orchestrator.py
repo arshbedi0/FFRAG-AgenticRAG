@@ -102,6 +102,27 @@ def llm(prompt: str, max_tokens: int = 512, temperature: float = 0.0) -> str:
 
 
 # ══════════════════════════════════════════════════════════════
+# LAZY LOADERS (for performance — reuse objects across nodes)
+# ══════════════════════════════════════════════════════════════
+_RETRIEVER = None
+_OPTIMIZER = None
+
+def get_retriever():
+    global _RETRIEVER
+    if _RETRIEVER is None:
+        from retrieval.retrieval_pipeline import ForensicsRetriever
+        _RETRIEVER = ForensicsRetriever()
+    return _RETRIEVER
+
+def get_optimizer():
+    global _OPTIMIZER
+    if _OPTIMIZER is None:
+        from retrieval.context_optimizer import ContextOptimizer
+        _OPTIMIZER = ContextOptimizer(use_compression=False)
+    return _OPTIMIZER
+
+
+# ══════════════════════════════════════════════════════════════
 # NODE A: ROUTER
 # ══════════════════════════════════════════════════════════════
 ROUTER_PROMPT = """You are an AML query router. Classify the user query into:
@@ -150,7 +171,7 @@ def router_node(state: AgentState) -> AgentState:
 # ══════════════════════════════════════════════════════════════
 REWRITER_PROMPT = """You are an AML forensics query expansion specialist.
 
-Given the user's query, generate 3 alternative search queries that:
+Given the user's query, generate 8 alternative search queries that:
 1. Use different but semantically equivalent phrasing
 2. Include relevant AML/FATF terminology
 3. Cover different aspects of the same question
@@ -160,8 +181,8 @@ answer document would contain. This is used for HyDE (Hypothetical Document Embe
 
 Respond ONLY with valid JSON:
 {{
-  "queries": ["query1", "query2", "query3"],
-  "hyde_document": "A short paragraph the ideal source document would contain..."
+    "queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8"],
+    "hyde_document": "A short paragraph the ideal source document would contain..."
 }}
 
 ORIGINAL QUERY: {query}
@@ -185,7 +206,7 @@ def query_rewriter_node(state: AgentState) -> AgentState:
         )
         clean  = response.replace("```json","").replace("```","").strip()
         parsed = json.loads(clean)
-        queries = [state["query"]] + parsed.get("queries", [])[:3]
+        queries = [state["query"]] + parsed.get("queries", [])[:8]
         hyde    = parsed.get("hyde_document", "")
     except Exception:
         queries = [state["query"]]
@@ -206,48 +227,30 @@ def retriever_node(state: AgentState) -> AgentState:
     Run hybrid retrieval across all query variants,
     then optimize context (compression + reordering).
     """
-    import sys
-    sys.path.append(".")
-    from retrieval.retrieval_pipeline import ForensicsRetriever
-    from retrieval.context_optimizer  import ContextOptimizer
+    print(f"  [RETRIEVER] Running optimized retrieval for {len(state['rewritten_queries'])} queries...")
 
-    print(f"  [RETRIEVER] Running retrieval for {len(state['rewritten_queries'])} queries...")
+    retriever  = get_retriever()
+    optimizer  = get_optimizer()
 
-    retriever  = ForensicsRetriever()
-    optimizer  = ContextOptimizer(use_compression=False)  # compression optional
-
-    # Merge results from all query variants
-    merged_results = {
-        "transactions":   [],
-        "graph_captions": [],
-        "regulations":    [],
-        "all_results":    [],
-    }
-
-    seen_ids = set()
-    for q in state["rewritten_queries"]:
-        results = retriever.retrieve(q, top_k=5)
-        for col in ["transactions", "graph_captions", "regulations"]:
-            for r in results.get(col, []):
-                rid = r.get("id", r.get("document", "")[:50])
-                if rid not in seen_ids:
-                    merged_results[col].append(r)
-                    merged_results["all_results"].append({**r, "collection": col})
-                    seen_ids.add(rid)
-
-    # If HyDE document provided, run one extra retrieval pass with it
+    # Combine LLM-rewritten queries, rule-based rewrites, and HyDE (if any)
+    all_search_variants = list(state["rewritten_queries"])
+    all_search_variants += retriever._rewrite_query(state["query"])
     if state.get("hyde_document"):
-        print(f"  [RETRIEVER] HyDE retrieval pass...")
-        hyde_results = retriever.retrieve(state["hyde_document"], top_k=3)
-        for col in ["transactions", "graph_captions", "regulations"]:
-            for r in hyde_results.get(col, []):
-                rid = r.get("id", r.get("document","")[:50])
-                if rid not in seen_ids:
-                    merged_results[col].append(r)
-                    merged_results["all_results"].append({**r, "collection": col})
-                    seen_ids.add(rid)
+        all_search_variants.append(state["hyde_document"])
 
-    all_chunks = merged_results["all_results"]
+    # Deduplicate while preserving order
+    seen = set()
+    all_search_variants = [q for q in all_search_variants if not (q in seen or seen.add(q))]
+
+    # Optimized single-pass retrieval across all variants
+    results = retriever.retrieve(
+        query=state["query"],
+        query_variants=all_search_variants,
+        expand_queries=False,  # Bypasses internal rule-based expansion
+        top_k=10               # Slightly more during agentic loop for better grading
+    )
+
+    all_chunks = results["all_results"]
     print(f"  [RETRIEVER] Total unique chunks: {len(all_chunks)}")
 
     # Context optimization
@@ -259,7 +262,7 @@ def retriever_node(state: AgentState) -> AgentState:
 
     return {
         **state,
-        "raw_results":       merged_results,
+        "raw_results":       results,
         "optimized_context": opt["context_string"],
         "all_chunks":        opt["chunks"],
     }
@@ -269,6 +272,9 @@ def retriever_node(state: AgentState) -> AgentState:
 # NODE D: GRADER (Self-Reflection)
 # ══════════════════════════════════════════════════════════════
 GRADER_PROMPT = """You are an AML forensics retrieval quality assessor.
+            # Deduplicate while preserving order
+            seen = set()
+            all_search_variants = [q for q in all_search_variants if not (q in seen or seen.add(q))]
 
 Given a QUERY and the TOP RETRIEVED CHUNKS, score how well the chunks
 address the query on a scale of 0.0 to 1.0:
@@ -288,7 +294,7 @@ QUERY: {query}
 TOP CHUNKS:
 {chunks}"""
 
-RELEVANCE_THRESHOLD = 0.6
+RELEVANCE_THRESHOLD = 0.45  # below this, we consider it a failed retrieval and retry
 
 def grader_node(state: AgentState) -> AgentState:
     """Score retrieved context relevance. Set should_retry flag."""
@@ -418,11 +424,18 @@ class FFRAGAgent:
 
     Usage:
       agent = FFRAGAgent()
-      result = agent.run("Find dormant accounts reactivated with large amounts")
-      print(result["answer"])
-    """
+            result = agent.run("Find dormant accounts reactivated with large amounts")
+            print(result["answer"])
+        """
 
-    def __init__(self):
+    def __init__(self, retriever=None):
+        """
+        Initialize the agent.
+        If a retriever is provided, it will be used instead of creating a new one.
+        """
+        global _RETRIEVER
+        if retriever:
+            _RETRIEVER = retriever
         self.graph = build_agent()
 
     def run(self, query: str) -> dict:

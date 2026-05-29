@@ -8,6 +8,12 @@ from pathlib import Path
 sys.path.append(".")
 
 import streamlit as st
+import streamlit.components.v1 as components
+from ui.motion import (
+    MOTION_CSS, BACKGROUND_CANVAS,
+    animated_metric_card, get_ai_thinking_html, get_retrieval_timeline,
+    get_fire_trigger_js,
+)
 
 st.set_page_config(
     page_title="FFRAG — Financial Forensics",
@@ -69,7 +75,7 @@ def load_pipeline():
     agent = None
     try:
         from retrieval.langgraph_orchestrator import FFRAGAgent
-        agent = FFRAGAgent()
+        agent = FFRAGAgent(retriever=retriever)
     except Exception:
         pass
 
@@ -139,214 +145,10 @@ def auto_name(messages):
             return q[:40] + ("..." if len(q) > 40 else "")
     return "New Session"
 
-# ── CSS ──
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+# ── MOTION SYSTEM ──
+st.markdown(MOTION_CSS, unsafe_allow_html=True)
+st.markdown(BACKGROUND_CANVAS, unsafe_allow_html=True)
 
-html, body, [class*="css"] {
-    font-family: 'IBM Plex Sans', sans-serif;
-    background-color: #040810;
-    color: #c8d0e0;
-}
-.main { background-color: #040810; }
-.block-container { padding: 2rem 2rem 6rem; max-width: 1200px; }
-
-/* ── HEADER ── */
-.ffrag-logo {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 26px; font-weight: 600;
-    color: #4a9eff; letter-spacing: -1px;
-}
-.ffrag-subtitle {
-    font-size: 11px; color: #334466;
-    letter-spacing: 3px; text-transform: uppercase; margin-top: 2px;
-}
-
-/* ── CHAT BUBBLES ── */
-.user-bubble {
-    background: linear-gradient(135deg, #0d1d35 0%, #0a1628 100%);
-    border: 1px solid #1e3a5f;
-    border-radius: 14px 14px 2px 14px;
-    padding: 14px 18px; margin: 12px 0 6px;
-    font-size: 14px; color: #a8c0e0;
-}
-.assistant-bubble {
-    background: linear-gradient(135deg, #060c18 0%, #07101e 100%);
-    border: 1px solid #0f1e38;
-    border-radius: 2px 14px 14px 14px;
-    padding: 18px 22px; margin: 6px 0 12px;
-    font-size: 14px; line-height: 1.8;
-}
-
-/* ── BADGES ── */
-.source-badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 0; }
-.badge {
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
-    padding: 3px 10px; border-radius: 20px; font-weight: 600;
-    letter-spacing: 1px; text-transform: uppercase;
-}
-.badge-txn   { background: #0a1f15; color: #3ddc84; border: 1px solid #1a4a30; }
-.badge-graph { background: #1a170a; color: #f0c040; border: 1px solid #3a3000; }
-.badge-reg   { background: #180d1f; color: #c084f0; border: 1px solid #3a1555; }
-
-/* ── SCORE ── */
-.score-block {
-    display: inline-flex; align-items: center; gap: 10px;
-    background: #060c18; border: 1px solid #1e3050;
-    border-radius: 8px; padding: 8px 16px; margin-top: 12px;
-    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
-}
-.score-critical { color: #ff4444; border-color: #3a0000; }
-.score-high     { color: #ff8c42; border-color: #3a1500; }
-.score-medium   { color: #f0c040; border-color: #3a2800; }
-.score-low      { color: #3ddc84; border-color: #003a18; }
-
-/* ── SYSTEM BLOCKS ── */
-.guardrail-block {
-    background: #160c0c; border: 1px solid #3a1515;
-    border-left: 3px solid #ff4444;
-    border-radius: 0 8px 8px 0; padding: 12px 16px;
-    margin: 8px 0; font-size: 13px; color: #cc8888;
-}
-.warning-block {
-    background: #0a1510; border: 1px solid #163020;
-    border-left: 3px solid #3ddc84;
-    border-radius: 0 8px 8px 0; padding: 10px 14px;
-    font-size: 12px; color: #5aaa70;
-}
-.tip-box {
-    background: #0a1510; border: 1px solid #163020;
-    border-left: 3px solid #3ddc84;
-    border-radius: 0 8px 8px 0; padding: 10px 14px;
-    font-size: 12px; color: #5aaa70; margin: 8px 0;
-}
-.agent-box {
-    background: #070d1c; border: 1px solid #152840;
-    border-left: 3px solid #4a9eff;
-    border-radius: 0 8px 8px 0; padding: 10px 14px;
-    font-size: 11px; color: #3a6080;
-    font-family: 'IBM Plex Mono', monospace; margin: 4px 0 10px;
-}
-
-/* ── VOICE PANEL ── */
-.voice-panel {
-    background: linear-gradient(135deg, #0c0614 0%, #080414 100%);
-    border: 1px solid #2a1545;
-    border-radius: 16px;
-    padding: 0;
-    margin: 16px 0 8px;
-    overflow: hidden;
-    position: relative;
-}
-.voice-panel-header {
-    background: linear-gradient(90deg, #1a0a2e 0%, #0c0614 100%);
-    border-bottom: 1px solid #2a1545;
-    padding: 10px 18px;
-    display: flex; align-items: center; gap: 10px;
-}
-.voice-panel-title {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 10px; font-weight: 600;
-    color: #9060cc; letter-spacing: 3px;
-    text-transform: uppercase;
-}
-.voice-panel-body { padding: 16px 18px 14px; }
-.voice-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #9060cc;
-    box-shadow: 0 0 8px #9060cc88;
-    display: inline-block;
-}
-.voice-dot-live {
-    background: #ff4060;
-    box-shadow: 0 0 10px #ff406088;
-    animation: pulse-dot 1s ease-in-out infinite;
-}
-@keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.85); }
-}
-.voice-transcript-box {
-    background: #0a0518;
-    border: 1px solid #2a1545;
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-top: 10px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-    color: #c0a0f0;
-    line-height: 1.6;
-    min-height: 44px;
-    position: relative;
-}
-.voice-transcript-label {
-    font-size: 9px; color: #5a3a88;
-    letter-spacing: 2px; text-transform: uppercase;
-    margin-bottom: 4px;
-}
-.voice-send-hint {
-    font-size: 10px; color: #5a3a88;
-    font-family: 'IBM Plex Mono', monospace;
-    margin-top: 8px; text-align: center;
-    letter-spacing: 1px;
-}
-.voice-error {
-    background: #120808; border: 1px solid #3a1515;
-    border-radius: 8px; padding: 10px 14px; margin-top: 8px;
-    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #cc5555;
-}
-
-/* ── METRIC CARDS ── */
-.metric-card {
-    background: #07101e; border: 1px solid #0f1e38;
-    border-radius: 8px; padding: 12px 16px; text-align: center;
-}
-.metric-value {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 20px; font-weight: 600; color: #4a9eff;
-}
-.metric-label {
-    font-size: 10px; color: #334455;
-    text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;
-}
-
-/* ── SIDEBAR ── */
-section[data-testid="stSidebar"] {
-    background: #030710 !important;
-    border-right: 1px solid #0c1828;
-}
-
-/* ── INPUT ── */
-textarea[data-testid="stChatInputTextArea"] {
-    background: #070d1c !important;
-    color: #c8d0e0 !important;
-    border: 1px solid #1a2e4a !important;
-    font-family: 'IBM Plex Sans', sans-serif !important;
-    font-size: 14px !important;
-    border-radius: 12px !important;
-}
-
-hr { border-color: #0c1828 !important; }
-
-/* ── STREAMLIT OVERRIDES ── */
-.stButton > button {
-    background: #0a1428 !important;
-    border: 1px solid #1a3050 !important;
-    color: #7aacdd !important;
-    font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 11px !important;
-    letter-spacing: 1px !important;
-    border-radius: 6px !important;
-    transition: all 0.15s ease;
-}
-.stButton > button:hover {
-    background: #0f1e38 !important;
-    border-color: #4a9eff !important;
-    color: #4a9eff !important;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # ── HEADER ──
 col_left, col_right = st.columns([3, 1])
@@ -393,12 +195,12 @@ if st.session_state.get("show_dashboard"):
 with st.sidebar:
     st.markdown("### 🗂 Data Sources")
     c1, c2 = st.columns(2)
-    c1.markdown('<div class="metric-card"><div class="metric-value">1,000</div><div class="metric-label">Transactions</div></div>', unsafe_allow_html=True)
-    c2.markdown('<div class="metric-card"><div class="metric-value">9</div><div class="metric-label">Graph PNGs</div></div>', unsafe_allow_html=True)
+    c1.markdown(animated_metric_card("Transactions", "1000",  nth=0), unsafe_allow_html=True)
+    c2.markdown(animated_metric_card("Graph PNGs",   "9",     nth=1), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     c3, c4 = st.columns(2)
-    c3.markdown('<div class="metric-card"><div class="metric-value">1,201</div><div class="metric-label">Reg Chunks</div></div>', unsafe_allow_html=True)
-    c4.markdown('<div class="metric-card"><div class="metric-value">2,210</div><div class="metric-label">Total Docs</div></div>', unsafe_allow_html=True)
+    c3.markdown(animated_metric_card("Reg Chunks",   "1201",  nth=2), unsafe_allow_html=True)
+    c4.markdown(animated_metric_card("Total Docs",   "2210",  nth=3), unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("### 🔍 Try These Queries")
     for s in ["Which accounts sent money to UAE?", "Show structuring transactions below £10,000",
@@ -602,28 +404,41 @@ def handle_query(query):
         ]
         return
 
+    components.html(get_fire_trigger_js(), height=0)
     st.markdown(f'<div class="user-bubble">🔎 {query}</div>', unsafe_allow_html=True)
     if guard.get("warning"):
         st.markdown(f'<div class="warning-block">💡 {guard["warning"]}</div>', unsafe_allow_html=True)
     if any(w in query.lower() for w in ["smurf", "aggregat"]):
         st.markdown('<div class="tip-box">💡 <b>Terminology note:</b> FATF formally calls smurfing <b>"placement via aggregation"</b>. Query expanded automatically.</div>', unsafe_allow_html=True)
 
+    _loader = st.empty()
+
     if agent is not None:
-        with st.spinner("⬡ Agent reasoning — routing → expanding → retrieving → grading..."):
-            output = agent.run(query)
+        _loader.markdown(
+            get_retrieval_timeline(active=0)
+            + get_ai_thinking_html("Routing query → expanding → retrieving → grading..."),
+            unsafe_allow_html=True,
+        )
+        output = agent.run(query)
+        _loader.empty()
     else:
-        with st.spinner("🔍 Retrieving & generating..."):
-            results  = retriever.retrieve(query, top_k=top_k)
-            raw_out  = generator.generate(query, results)
-            output   = {
-                "answer":          raw_out["answer"],
-                "sources":         raw_out["sources"],
-                "suspicion_score": generator.score_suspicion(results["transactions"][0]["document"]) if results.get("transactions") else None,
-                "raw_results":     results,
-                "relevance_score": 0.0,
-                "retry_count":     0,
-                "pipeline":        "direct",
-            }
+        _loader.markdown(
+            get_retrieval_timeline(active=2)
+            + get_ai_thinking_html("Retrieving evidence and generating response..."),
+            unsafe_allow_html=True,
+        )
+        results  = retriever.retrieve(query, top_k=top_k)
+        raw_out  = generator.generate(query, results)
+        _loader.empty()
+        output   = {
+            "answer":          raw_out["answer"],
+            "sources":         raw_out["sources"],
+            "suspicion_score": generator.score_suspicion(results["transactions"][0]["document"]) if results.get("transactions") else None,
+            "raw_results":     results,
+            "relevance_score": 0.0,
+            "retry_count":     0,
+            "pipeline":        "direct",
+        }
 
     results   = output["raw_results"]
     raw       = output["answer"]

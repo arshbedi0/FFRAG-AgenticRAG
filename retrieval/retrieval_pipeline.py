@@ -28,8 +28,25 @@ load_dotenv()
 CHROMA_DIR      = os.getenv("CHROMA_DIR",       "chroma_db")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL",  "BAAI/bge-small-en-v1.5")
 RERANKER_MODEL  = os.getenv("RERANKER_MODEL",   "cross-encoder/ms-marco-MiniLM-L-6-v2")
-TOP_K_EACH      = int(os.getenv("TOP_K_EACH",   "10"))   # per retriever per collection
-TOP_K_RERANK    = int(os.getenv("TOP_K_RERANK", "5"))    # final chunks sent to LLM
+TOP_K_EACH      = int(os.getenv("TOP_K_EACH",   "25"))   # per retriever per collection
+TOP_K_RERANK    = int(os.getenv("TOP_K_RERANK", "10"))   # final chunks sent to LLM
+ENABLE_GRAPH_RETRIEVER = os.getenv("ENABLE_GRAPH_RETRIEVER", "true").lower() == "true"
+
+_GRAPH_RETRIEVER = None
+
+def _get_graph_retriever():
+    global _GRAPH_RETRIEVER
+    if _GRAPH_RETRIEVER is None:
+        from retrieval.graph_retriever import GraphRetriever
+        _GRAPH_RETRIEVER = GraphRetriever()
+    return _GRAPH_RETRIEVER
+
+def _is_graph_query(query: str) -> bool:
+    q = query.lower()
+    return any(k in q for k in [
+        "graph", "network", "hop", "trace", "round trip", "round-trip",
+        "corridor", "hub", "multi-hop", "multi hop", "fund flow", "path"
+    ])
 
 # ── IMPORTS ──
 try:
@@ -255,40 +272,40 @@ class ForensicsRetriever:
         query: str,
         top_k: int = TOP_K_RERANK,
         collections: Optional[list[str]] = None,
+        expand_queries: bool = True,
+        query_variants: Optional[list[str]] = None,
+        use_graph: bool = ENABLE_GRAPH_RETRIEVER,
         verbose: bool = False,
     ) -> dict:
         """
         Full hybrid retrieval pipeline.
 
         Args:
-            query:       User's natural language question
-            top_k:       Number of final chunks to return (after reranking)
-            collections: Which collections to search. None = all three.
-                         Options: ["transactions", "graph_captions", "regulations"]
-            verbose:     Print intermediate results
-
-        Returns:
-            {
-                "query":        original query,
-                "rewritten":    expanded queries used,
-                "transactions": [...],   top chunks from transactions
-                "graph_captions": [...], top chunks from captions
-                "regulations":  [...],   top chunks from regulations
-                "all_results":  [...],   all chunks merged + reranked
-            }
+            query:          User's natural language question
+            top_k:          Number of final chunks to return (after reranking)
+            collections:    Which collections to search.
+            expand_queries: Whether to run internal rule-based expansion.
+            query_variants: Explicit list of search terms (bypasses expansion).
+            verbose:        Print intermediate results
         """
+
         if collections is None:
             collections = ["transactions", "graph_captions", "regulations"]
 
-        # Step 1: Query rewriting
-        rewritten_queries = self._rewrite_query(query)
+        # Step 1: Query variants
+        if query_variants:
+            search_queries = query_variants
+        elif expand_queries:
+            search_queries = self._rewrite_query(query)
+        else:
+            search_queries = [query]
+
         if verbose:
-            print(f"\n📝 Query rewritten into {len(rewritten_queries)} variants:")
-            for q in rewritten_queries:
+            print(f"\n📝 Search using {len(search_queries)} query variants:")
+            for q in search_queries:
                 print(f"   • {q}")
 
         # Step 2: Retrieve from each collection using both BM25 + dense
-        # We aggregate across all rewritten query variants
         all_candidates = []
         collection_results = {c: [] for c in collections}
 
@@ -302,7 +319,7 @@ class ForensicsRetriever:
             chroma_col, bm25_idx = col_map[col_name]
             col_candidates = []
 
-            for q in rewritten_queries[:3]:  # limit to top 3 rewrites for speed
+            for q in search_queries:
                 # Dense retrieval
                 dense_results = self._dense_search(chroma_col, q, TOP_K_EACH)
 
@@ -313,7 +330,7 @@ class ForensicsRetriever:
                 fused = reciprocal_rank_fusion([dense_results, bm25_results])
                 col_candidates.extend(fused)
 
-            # Deduplicate by ID (keep highest rrf_score)
+            # Global Deduplicate for this collection
             seen = {}
             for doc in col_candidates:
                 doc_id = doc["id"]
@@ -331,6 +348,30 @@ class ForensicsRetriever:
             if verbose:
                 print(f"\n   [{col_name}] {len(col_candidates)} candidates after fusion")
 
+        # Optional: add graph retriever summary as a candidate
+        if use_graph and _is_graph_query(query):
+            try:
+                graph = _get_graph_retriever()
+                graph_result = graph.query(query)
+                summary = graph_result.get("summary", "").strip()
+                if summary:
+                    graph_doc = f"{summary} Query context: {query}"
+                    all_candidates.append({
+                        "id": f"graph_{abs(hash(graph_doc))}",
+                        "document": graph_doc,
+                        "metadata": {
+                            "source": "graph_retriever",
+                            "operation": graph_result.get("operation"),
+                            "params": graph_result.get("params", {}),
+                        },
+                        "score": 1.0,
+                        "method": "graph",
+                        "collection": "graph_captions",
+                    })
+            except Exception as e:
+                if verbose:
+                    print(f"\n   [graph] skipped: {e}")
+
         # Step 3: Rerank ALL candidates together
         if verbose:
             print(f"\n🔍 Reranking {len(all_candidates)} total candidates → top {top_k}...")
@@ -340,7 +381,7 @@ class ForensicsRetriever:
         # Step 4: Separate back by collection for structured output
         output = {
             "query":          query,
-            "rewritten":      rewritten_queries,
+            "rewritten":      search_queries,
             "all_results":    final_results,
             "transactions":   [r for r in final_results if r.get("collection") == "transactions"],
             "graph_captions": [r for r in final_results if r.get("collection") == "graph_captions"],

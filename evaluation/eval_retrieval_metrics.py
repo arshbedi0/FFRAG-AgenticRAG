@@ -119,37 +119,63 @@ RETRIEVAL_GROUND_TRUTH = [
 # ══════════════════════════════════════════════════════════════
 # RELEVANCE JUDGE
 # ══════════════════════════════════════════════════════════════
-def is_relevant(chunk: dict, ground_truth: dict) -> bool:
+def _collection_match(chunk: dict, ground_truth: dict) -> bool:
+    return chunk.get("collection", "") == ground_truth["relevant_collection"]
+
+
+def is_relevant_strict(chunk: dict, ground_truth: dict) -> bool:
     """
-    Decide if a retrieved chunk is relevant for a query.
+    Strict relevance for corpus counting.
     A chunk is relevant if it:
       1. Comes from the expected collection, AND
-      2. Contains at least one expected keyword (case-insensitive)
-         OR matches the expected typology in metadata
+      2. Matches expected typology OR satisfies the keyword policy
     """
-    doc      = (chunk.get("document") or chunk.get("text") or "").lower()
-    meta     = chunk.get("metadata", {})
-    col      = chunk.get("collection", "")
-
-    # Collection check
-    if col != ground_truth["relevant_collection"]:
+    if not _collection_match(chunk, ground_truth):
         return False
 
-    # Typology check (fast path for transactions)
+    doc  = (chunk.get("document") or chunk.get("text") or "").lower()
+    meta = chunk.get("metadata", {})
+
     expected_typology = ground_truth.get("relevant_typology", "")
     if expected_typology:
         meta_typology = str(meta.get("typology", "")).lower()
         if expected_typology.lower() in meta_typology:
             return True
 
-    # Keyword check
     keywords = ground_truth.get("relevant_keywords", [])
     any_match = ground_truth.get("relevant_keywords_any", False)
 
     if any_match:
         return any(kw.lower() in doc for kw in keywords)
-    else:
-        return all(kw.lower() in doc for kw in keywords)
+    return all(kw.lower() in doc for kw in keywords)
+
+
+def is_relevant_relaxed(chunk: dict, ground_truth: dict) -> bool:
+    """
+    Relaxed relevance for top-K evaluation.
+    A chunk is relevant if it:
+      1. Comes from the expected collection, AND
+      2. Matches expected typology OR any keyword appears in doc or metadata
+    """
+    if not _collection_match(chunk, ground_truth):
+        return False
+
+    doc  = (chunk.get("document") or chunk.get("text") or "").lower()
+    meta = chunk.get("metadata", {})
+
+    expected_typology = ground_truth.get("relevant_typology", "")
+    if expected_typology:
+        meta_typology = str(meta.get("typology", "")).lower()
+        if expected_typology.lower() in meta_typology:
+            return True
+
+    keywords = ground_truth.get("relevant_keywords", [])
+    meta_text = " ".join(str(v) for v in meta.values()).lower()
+
+    return any(
+        kw.lower() in doc or kw.lower() in meta_text
+        for kw in keywords
+    )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -159,7 +185,7 @@ def precision_at_k(retrieved: list[dict], ground_truth: dict) -> float:
     """Precision@K = relevant retrieved / K"""
     k         = ground_truth["k"]
     top_k     = retrieved[:k]
-    n_relevant = sum(1 for c in top_k if is_relevant(c, ground_truth))
+    n_relevant = sum(1 for c in top_k if is_relevant_relaxed(c, ground_truth))
     return n_relevant / k if k > 0 else 0.0
 
 
@@ -169,7 +195,7 @@ def recall_at_k(retrieved: list[dict], ground_truth: dict, total_relevant: int) 
         return 0.0
     k          = ground_truth["k"]
     top_k      = retrieved[:k]
-    n_retrieved = sum(1 for c in top_k if is_relevant(c, ground_truth))
+    n_retrieved = sum(1 for c in top_k if is_relevant_relaxed(c, ground_truth))
     return n_retrieved / total_relevant
 
 
@@ -179,7 +205,7 @@ def reciprocal_rank(retrieved: list[dict], ground_truth: dict) -> float:
     If no relevant chunk found, RR = 0
     """
     for rank, chunk in enumerate(retrieved, start=1):
-        if is_relevant(chunk, ground_truth):
+        if is_relevant_relaxed(chunk, ground_truth):
             return 1.0 / rank
     return 0.0
 
@@ -209,7 +235,7 @@ def count_relevant_in_corpus(collection_name: str, ground_truth: dict) -> int:
                 "metadata":   result["metadatas"][i],
                 "collection": collection_name,
             }
-            if is_relevant(chunk, ground_truth):
+            if is_relevant_strict(chunk, ground_truth):
                 count += 1
 
         return max(count, 1)  # avoid div/0
