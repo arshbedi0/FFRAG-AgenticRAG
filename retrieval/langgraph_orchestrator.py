@@ -424,9 +424,9 @@ class FFRAGAgent:
 
     Usage:
       agent = FFRAGAgent()
-            result = agent.run("Find dormant accounts reactivated with large amounts")
-            print(result["answer"])
-        """
+      result = agent.run("Find dormant accounts reactivated with large amounts")
+      print(result["answer"])
+    """
 
     def __init__(self, retriever=None):
         """
