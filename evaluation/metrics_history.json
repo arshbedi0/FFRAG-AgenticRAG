@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2026-05-29T22:10:17.612683Z",
+    "hybrid": {
+      "precision": 0.84,
+      "recall": 0.5725,
+      "mrr": 0.7833
+    },
+    "baseline": {
+      "precision": 0.58,
+      "recall": 0.2796,
+      "mrr": 0.6
+    }
+  }
+]
