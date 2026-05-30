@@ -4,6 +4,7 @@ numpy<2.0.0
 pandas
 networkx
 matplotlib
+plotly>=5.17.0
 chromadb
 sentence-transformers
 pdfplumber
