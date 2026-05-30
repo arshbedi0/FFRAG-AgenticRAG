@@ -55,6 +55,8 @@ chat_sessions/
 *.png
 *.jpg
 *.jpeg
+# Allow graph PNGs needed for cloud deployment
+!data/graphs/*.png
 
 # OS
 .DS_Store

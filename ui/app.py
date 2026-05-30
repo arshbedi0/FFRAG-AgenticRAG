@@ -415,7 +415,7 @@ def handle_query(query):
 
     if agent is not None:
         _loader.markdown(
-            get_retrieval_timeline(active=0)
+            get_retrieval_timeline(auto=True)
             + get_ai_thinking_html("Routing query → expanding → retrieving → grading..."),
             unsafe_allow_html=True,
         )

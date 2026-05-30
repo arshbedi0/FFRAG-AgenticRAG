@@ -14,6 +14,9 @@ Import in app.py:
 """
 
 import os, re, random
+
+# Absolute path to project root (ui/ is one level below root)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -104,25 +107,22 @@ class GraphRenderer:
     Looks up image_path from caption metadata.
     """
 
-    # Fallback path patterns to try if metadata path doesn't exist
-    SEARCH_PATHS = [
-        "{image_path}",
-        "data/graphs/{graph_id}.png",
-        "DATA/graphs/{graph_id}.png",
-        "wallet_graphs/{graph_id}.png",
-    ]
-
     @staticmethod
     def find_image(metadata: dict) -> str | None:
-        """Find the graph PNG from metadata, trying multiple path patterns."""
+        """Find the graph PNG, preferring absolute paths relative to project root."""
         graph_id   = metadata.get("graph_id", "")
         image_path = metadata.get("image_path", "")
 
-        for pattern in GraphRenderer.SEARCH_PATHS:
-            path = pattern.format(
-                image_path=image_path,
-                graph_id=graph_id
-            )
+        candidates = [
+            # Absolute paths based on project root (works on any deployment)
+            os.path.join(_PROJECT_ROOT, "data", "graphs", f"{graph_id}.png"),
+            # Legacy absolute path stored in metadata (local dev only)
+            image_path,
+            # Relative fallbacks
+            os.path.join("data", "graphs", f"{graph_id}.png"),
+            os.path.join("wallet_graphs", f"{graph_id}.png"),
+        ]
+        for path in candidates:
             if path and os.path.exists(path):
                 return path
         return None
@@ -141,6 +141,9 @@ class GraphRenderer:
 
         for r in graph_results:
             meta     = r["metadata"]
+            if not meta.get("graph_id"):
+                continue
+
             title    = meta.get("title", "Graph Analysis")
             typology = meta.get("typology", "")
             vol      = float(meta.get("total_volume", 0))
@@ -175,9 +178,7 @@ class GraphRenderer:
                     caption=f"{title} — {n_accs} accounts, £{vol:,.0f} volume",
                     use_container_width=True,
                 )
-            else:
-                st.warning(f"Graph image not found for {typology}. "
-                          f"Expected at: {meta.get('image_path', 'unknown')}")
+            # else: image not found — skip silently rather than showing an error banner
 
 
 # ══════════════════════════════════════════════════════════════

@@ -785,6 +785,26 @@ textarea[data-testid="stChatInputTextArea"]:focus {
 }
 .ff-stage-code { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #1e3050; letter-spacing: 1px; }
 
+/* Auto-cycling pipeline: each stage wakes up sequentially via CSS */
+@keyframes ff-stage-autocycle {
+  from { opacity: 0.3; color: #445577; }
+  to   { opacity: 1;   color: var(--ff-text); }
+}
+.ff-stage.ff-auto {
+  animation: ff-stage-autocycle 0.5s var(--d, 0s) both;
+}
+.ff-stage.ff-auto .ff-stage-dot {
+  background: var(--ff-blue); border-color: var(--ff-blue);
+  box-shadow: 0 0 8px rgba(74,158,255,0.55);
+  animation: ff-dot-ping 0.85s calc(var(--d, 0s) + 0.5s) ease-in-out infinite;
+}
+.ff-stage.ff-auto .ff-stage-track::after {
+  content: ''; display: block; height: 100%;
+  background: linear-gradient(90deg, transparent, var(--ff-blue), transparent);
+  background-size: 200% 100%;
+  animation: ff-line-flow 1.4s calc(var(--d, 0s) + 0.5s) linear infinite;
+}
+
 /* ══════════════════════════════════════════════════════════
    SCROLL REVEAL
    ══════════════════════════════════════════════════════════ */
@@ -1214,19 +1234,28 @@ _RETRIEVAL_STAGES = [
     ("Graph analysis",          "GRAPH DB"),
     ("Generating response",     "LLM"),
 ]
+_STAGE_AUTO_DELAYS = ["0s", "1.5s", "3s", "5s", "7s"]
 
-def get_retrieval_timeline(active: int = 0) -> str:
-    """Animated retrieval pipeline timeline. active=0..4 sets which stage is live."""
+def get_retrieval_timeline(active: int = 0, auto: bool = False) -> str:
+    """Animated retrieval pipeline timeline.
+    auto=True: CSS-driven sequential wake-up (use during live agent run).
+    active=N: static state — stages 0..N-1 done, N active, rest pending.
+    """
     rows = ""
     for i, (label, code) in enumerate(_RETRIEVAL_STAGES):
-        if i < active:
-            cls = "ff-stage ff-done"
-        elif i == active:
-            cls = "ff-stage ff-active"
+        if auto:
+            cls = f"ff-stage ff-auto"
+            style = f'style="--d:{_STAGE_AUTO_DELAYS[i]};animation-delay:{i*55}ms;"'
         else:
-            cls = "ff-stage"
+            if i < active:
+                cls = "ff-stage ff-done"
+            elif i == active:
+                cls = "ff-stage ff-active"
+            else:
+                cls = "ff-stage"
+            style = f'style="animation-delay:{i*55}ms;"'
         rows += (
-            f'<div class="{cls}" style="animation-delay:{i*55}ms;">'
+            f'<div class="{cls}" {style}>'
             f'  <div class="ff-stage-dot"></div>'
             f'  <span>{label}</span>'
             f'  <div class="ff-stage-track"></div>'
